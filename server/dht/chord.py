@@ -20,7 +20,7 @@ class ChordNode:
         '''
         self._address = ip_address
         self._id: int = id_from(ip_address)
-        
+
         self._predecessor = None
         self._successors = [None] * successor_cache_size
         self._finger_table = [None] * HASH_BIT_COUNT
@@ -38,7 +38,8 @@ class ChordNode:
             return self.id < other.id
         else:
             t1, t2 = type(self), type(other)
-            raise TypeError(f"'<' is not supported between instances of {t1} and {t2}.")
+            raise TypeError(
+                f"'<' is not supported between instances of {t1} and {t2}.")
 
     def __le__(self, other: Union[int, ChordNode]):
         if isinstance(other, int):
@@ -47,8 +48,9 @@ class ChordNode:
             return self.id <= other.id
         else:
             t1, t2 = type(self), type(other)
-            raise TypeError(f"'<=' is not supported between instances of {t1} and {t2}.")
-    
+            raise TypeError(
+                f"'<=' is not supported between instances of {t1} and {t2}.")
+
     def __gt__(self, other: Union[int, ChordNode]):
         if isinstance(other, int):
             return self.id > other
@@ -56,8 +58,9 @@ class ChordNode:
             return self.id > other.id
         else:
             t1, t2 = type(self), type(other)
-            raise TypeError(f"'>' is not supported between instances of {t1} and {t2}.")
-    
+            raise TypeError(
+                f"'>' is not supported between instances of {t1} and {t2}.")
+
     def __ge__(self, other: Union[int, ChordNode]):
         if isinstance(other, int):
             return self.id >= other
@@ -65,7 +68,8 @@ class ChordNode:
             return self.id >= other.id
         else:
             t1, t2 = type(self), type(other)
-            raise TypeError(f"'>=' is not supported between instances of {t1} and {t2}.")
+            raise TypeError(
+                f"'>=' is not supported between instances of {t1} and {t2}.")
 
     @property
     def id(self) -> int:
@@ -91,5 +95,3 @@ class ChordNode:
             if self < finger < id:
                 return finger
         return self
-
-    
