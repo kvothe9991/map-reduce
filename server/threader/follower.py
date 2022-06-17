@@ -1,4 +1,4 @@
-from threader.threader import Threader
+from server.threader.threader import Threader
 
 class Follower(Threader):
     def __init__(self, port=8001) -> None:
