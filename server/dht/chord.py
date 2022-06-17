@@ -1,6 +1,6 @@
 from __future__ import annotations
 import Pyro4
-from typing import Union
+from typing import Union, Optional
 from server.dht.utils import id_from, HASH_BIT_COUNT
 
 
@@ -19,11 +19,11 @@ class ChordNode:
         nodes failing simultaneously.
         '''
         self._address = ip_address
-        self._id = id_from(ip_address)
+        self._id: int = id_from(ip_address)
         
-        self._predecessor: ChordNode = None
-        self._successors: list[ChordNode] = [None] * successor_cache_size
-        self._finger_table: list[ChordNode] = [None] * HASH_BIT_COUNT
+        self._predecessor = None
+        self._successors = [None] * successor_cache_size
+        self._finger_table = [None] * HASH_BIT_COUNT
 
     def __repr__(self):
         return f'{self.__class__.__name__}<{self._id}>'
@@ -72,7 +72,7 @@ class ChordNode:
         return self._id
 
     @property
-    def successor(self, k=0) -> ChordNode:
+    def successor(self, k=0) -> Optional[ChordNode]:
         return self._successors[k]
 
     @property
