@@ -7,7 +7,7 @@ from utils import alive
 def file_system():
     pass
 
-Pyro4.expose
+@Pyro4.expose
 class Master(ThreaderNode):
     """
     Prime master server.
