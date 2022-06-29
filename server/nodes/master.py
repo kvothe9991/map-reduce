@@ -3,9 +3,9 @@ import Pyro4
 from Pyro4 import URI
 from utils import alive
 
-
-def file_system():
-    pass
+class FileSystem:
+    def __init__(self) -> None:
+        pass
 
 @Pyro4.expose
 class Master(ThreaderNode):
@@ -17,7 +17,7 @@ class Master(ThreaderNode):
 
         self._followers = []
         self._pending_fallowers = []
-        self._filesystem = file_system()
+        self._filesystem = FileSystem()
 
     def request_pending_follower(self, address: URI):
         if not (address in self._pending_fallowers):
