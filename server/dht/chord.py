@@ -1,8 +1,12 @@
 from __future__ import annotations
 import Pyro4
 from Pyro4 import URI, Proxy
+from Pyro4.errors import CommunicationError
 from typing import Union, Optional
-from server.dht.utils import id, alive, BIT_COUNT
+from server.utils import id, alive, SHA1_BIT_COUNT
+from server.dht.logger import logger
+
+''' Pyro4 URI Domain: <NAME>.dht '''
 
 
 @Pyro4.expose
@@ -22,7 +26,7 @@ class ChordNode:
 
         self._predecessor = None
         self._successor = self._address
-        self._finger_table = [None] * BIT_COUNT
+        self._finger_table = [None] * SHA1_BIT_COUNT
         self._next_finger_to_fix = 0
 
     def __repr__(self):
@@ -52,19 +56,34 @@ class ChordNode:
     # Exposed RPCs:
     def find_successor(self, x: int) -> URI:
         ''' Return immediate successor of id `x`, in address form. '''
+        
+        # Trivial case for the ring being one-node long.
+        if self.successor is None:
+            return self.address
+        
+        # Search if `x` belongs to this node's domain, otherwise check the finger table.
         if self.id < x <= id(self.successor):
             return self.successor
         else:
             with Proxy(self.closest_preceding_node(x)) as n:
+                # closest_preceding_node() guarantees that the returned node is alive.
                 return n.find_successor(x)
 
     def closest_preceding_node(self, x: int) -> URI:
         ''' Search the local finger table for the closest predecessor of id `x`,
         running the table in reverse order for convenient convergence to the furthest
-        node from self available, which is returned in address form. '''
-        for finger in self._finger_table[:0:-1]:
-            if self.id < id(finger) < x:
-                return finger
+        node from self available, which is returned in address form.
+        
+        For convenience, the closest preceding *alive* node is returned.'''
+        
+        # Iterate finger table in reverse order, skipping the last one.
+        for f_addr in reversed(self._finger_table):
+            if self.id < id(f_addr) < x:
+                with Proxy(f_addr) as f:
+                    if alive(f):
+                        return f_addr
+                    else:
+                        continue
         return self.address
 
     def join(self, address: URI):
@@ -75,7 +94,7 @@ class ChordNode:
 
     def notify(self, n: URI):
         ''' Remote procedure call from node `n` announcing it might be this node's
-        predecessor. '''
+        predecessor. Assumes `n` alive since it's the one who invoked this method. '''
         if not self.predecessor or (id(self.predecessor) < id(n) < self.id):
             self.predecessor = n
 
@@ -87,13 +106,16 @@ class ChordNode:
         with Proxy(self.successor) as s:
             x = s.predecessor
             if self.id < id(x) < id(s):
-                self._successor = x
+                with Proxy(x) as x_node:
+                    if alive(x_node):
+                        self._successor = x
         with Proxy(self.successor) as s:
             s.notify(self.address)
     
     def _update_next_finger(self) -> int:
+        ''' Cycles periodically between all `m` fingers of the table. '''
         self._next_finger_to_fix += 1
-        self._next_finger_to_fix %= BIT_COUNT
+        self._next_finger_to_fix %= SHA1_BIT_COUNT
         return self._next_finger_to_fix
 
     def _fix_fingers(self):
