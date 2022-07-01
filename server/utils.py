@@ -7,17 +7,27 @@ from Pyro4.errors import CommunicationError
 SHA1_BIT_COUNT = 160
 
 
-def alive(proxy: Union[Proxy,URI]) -> bool:
-    if isinstance(proxy, URI):
-        with Proxy(proxy) as p:
-            return p.ping()
-    is_alive = True
+def alive(proxy: Proxy) -> bool:
+    ''' Returns True if the given proxy is alive. '''
+    if proxy is None:
+        raise ValueError('Proxy to live-check must not be None.')
     try:
         proxy._pyroBind()
-    except CommunicationError:
-        is_alive = False
+        return True
+    except CommunicationError as e:
+        return False
+
+def reachable(addr: URI) -> bool:
+    ''' Returns True if the given URI is exposed by the Pyro daemon. '''
+    if addr is None:
+        raise ValueError('Address to check for reachable must not be None.')
+    try:
+        with Proxy(addr) as proxy:
+            proxy._pyroBind()
+    except CommunicationError as e:
+        return False
     finally:
-        return is_alive
+        return True
 
 def id(key: Union[str,URI], hash: Callable = sha1) -> int:
     ''' Returns a numerical identifier obtained from hashing an string key.
