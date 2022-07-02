@@ -8,6 +8,7 @@ LOGGING_DATEFMT = '%m/%d|%H:%M:%S'
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 # Formatters:
 formatter = logging.Formatter(LOGGING_FORMAT, LOGGING_DATEFMT)
