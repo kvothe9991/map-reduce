@@ -1,6 +1,5 @@
 from hashlib import sha1
 from typing import Callable, Union
-
 from Pyro4 import Proxy, URI
 from Pyro4.errors import CommunicationError
 
@@ -34,6 +33,8 @@ def id(key: Union[str,URI], hash: Callable = sha1) -> int:
     Additional support for Pyro URIs for convenience. '''
     if isinstance(key, URI):
         key = key.host
-    hex_hash = hash(key.encode()).hexdigest()
-    id = int(hex_hash, base=16)
-    return id
+    hex_hash = hash(key.encode('utf8')).hexdigest()
+    return int(hex_hash, base=16)
+
+def in_circular_interval(x: int, l: int, r: int):
+    return (l < x <= r) if l < r else (l < x or x <= r)
