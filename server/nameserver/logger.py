@@ -3,11 +3,11 @@ Module-level logging component.
 '''
 import logging
 
-LOGGING_FORMAT = '[%(asctime)s][%(name)s][%(levelname)s][%(URI)s] %(message)s'
+LOGGING_FORMAT = '[\033[1;32m%(name)s\x1b[0m][%(levelname)s][%(URI)s] %(message)s'
 LOGGING_DATEFMT = '%m/%d|%H:%M:%S'
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('ns')
 logger.setLevel(logging.DEBUG)
 
 # Formatters:

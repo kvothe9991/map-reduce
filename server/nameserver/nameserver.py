@@ -19,8 +19,10 @@ class BoundNameServer:
     def __init__(self, ip: str, port: int = 8008):
         self._ip = ip
         self._port = port
-        self._quickname = f'PYRO:(ns.binder)@{self._ip}:{self._port}'
-        self.logger = logging.LoggerAdapter(logger, {'URI': self._quickname})
+
+        # Logger config.
+        global logger
+        logger = logging.LoggerAdapter(logger, {'URI': self._ip})
 
         self.uri: URI = None
         self._ns_thread: Thread = None
@@ -30,7 +32,7 @@ class BoundNameServer:
 
         # Initial search for nameserver.
         if uri := self.locate_NS():
-            self.logger.info(f'Found existing nameserver {uri}.')
+            logger.info(f'Found existing nameserver {uri}.')
             self.uri = uri
         else:
             self.start()
@@ -63,38 +65,38 @@ class BoundNameServer:
         self._ns_thread = Thread(target=self._ns_daemon.requestLoop)
         self._ns_thread.setDaemon(True)
         self._ns_thread.start()
-        self.logger.info(f'Local nameserver started at {self.uri}.')
+        logger.info(f'Local nameserver started at {self.uri}.')
 
     def stop(self):
         ''' Stops the local nameserver. '''
         self._ns_daemon.shutdown()
         if self._ns_thread.join(0.1) and self._ns_thread.is_alive():
-            self.logger.error('Nameserver thread did not stop after daemon shutdown order.')
+            logger.error('Nameserver thread did not stop after daemon shutdown order.')
         else:
             self._ns_thread = None
             self._ns_daemon = self._ns_broadcast = None
-            self.logger.info(f'Local nameserver stopped.')
+            logger.info(f'Local nameserver stopped.')
     
     def check_NS(self):
         ''' Checks for a nameserver in the network. Announces self otherwise. '''
         if self.remote:
             if reachable(self.uri):
-                self.logger.debug(f'Remote nameserver {self.uri} is reachable as expected.')
+                logger.debug(f'Remote nameserver {self.uri} is reachable as expected.')
             else:
-                self.logger.warning(f'Remote nameserver {self.uri} is not reachable.')
+                logger.warning(f'Remote nameserver {self.uri} is not reachable.')
                 if new_uri := self.locate_NS():
-                    self.logger.info(f'Found new nameserver {new_uri}.')
+                    logger.info(f'Found new nameserver {new_uri}.')
                     self.uri = new_uri
                 else:
-                    self.logger.warning(f'No new nameserver found. Announcing self.')
+                    logger.warning(f'No new nameserver found. Announcing self.')
                     self.start()
         else:
             if (new_uri := self.locate_NS()) is not None and new_uri != self.uri:
-                self.logger.info(f'Found contesting nameserver {new_uri}.')
+                logger.info(f'Found contesting nameserver {new_uri}.')
                 if id(self.uri) < id(new_uri):
-                    self.logger.info(f'I am still the nameserver.')
+                    logger.info(f'I am still the nameserver.')
                 else:
-                    self.logger.info(f'I no longer am the nameserver, long live {new_uri}.')
+                    logger.info(f'I no longer am the nameserver, long live {new_uri}.')
                     self.uri = new_uri
                     self.stop()
 
@@ -104,7 +106,7 @@ class BoundNameServer:
         and spawns one if there is none running in the network.  The
         `self._keep_checking_loop` attribute is used to stop the loop.
         '''
-        self.logger.info('Starting nameserver check loop.')
+        logger.info('Starting nameserver check loop.')
         self._keep_checking_loop = True
         while self._keep_checking_loop:
             time.sleep(10)

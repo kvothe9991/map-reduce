@@ -5,10 +5,10 @@ import logging
 
 LOGGING_FORMAT = '[%(asctime)s][%(name)s][%(levelname)s] %(message)s'
 LOGGING_DATEFMT = '%m/%d|%H:%M:%S'
-SHORT_LOGGING_FORMAT = '[%(name)s][%(levelname)s][%(URI)s] %(message)s'
+SHORT_LOGGING_FORMAT = '[\x1b[33;20m%(name)s\x1b[0m][%(levelname)s][%(URI)s] %(message)s'
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('dht')
 logger.setLevel(logging.DEBUG)
 
 # Formatters:
