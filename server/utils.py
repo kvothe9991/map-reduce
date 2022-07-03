@@ -28,13 +28,15 @@ def reachable(addr: URI) -> bool:
     finally:
         return True
 
-def id(key: Union[str,URI], hash: Callable = sha1) -> int:
+def id(key: URI, hash: Callable = sha1) -> int:
     ''' Returns a numerical identifier obtained from hashing an string key.
     Additional support for Pyro URIs for convenience. '''
-    if isinstance(key, URI):
-        key = key.host
+    assert isinstance(key, URI), 'address to id must be provided in URI form.'
+    key = key.host
     hex_hash = hash(key.encode('utf8')).hexdigest()
     return int(hex_hash, base=16)
 
 def in_circular_interval(x: int, l: int, r: int):
-    return (l < x <= r) if l < r else (l < x or x <= r)
+    assert l != r, f'Left and right bounds must not be equal for circular comparison.'
+    return (l < x <= r) or ((l > r) and (l < x or x <= r))
+    # return (l < x <= r) if l <= r else (l < x or x <= r)

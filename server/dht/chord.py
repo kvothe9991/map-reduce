@@ -29,7 +29,11 @@ class ChordNode:
         self._id = id(address)  # Numerical identifier of this node.
         self._predecessor = None        # Pyro4 URI of this node's predecessor.
         self._successor = self._address # Pyro4 URI of this node's successors.
-        self.logger = logging.LoggerAdapter(logger, {'URI': f'{self._address}<{self._id:.2e}>'})
+        
+        # Logging setup:
+        global logger
+        packed_data = {'URI': f'{self.address.host}, {self._id:.1e}'}
+        logger = logging.LoggerAdapter(logger, packed_data)
         
         # Finger table and its stabilization.
         self._finger_table = [None] * FINGER_TABLE_SIZE
@@ -65,11 +69,38 @@ class ChordNode:
     @property
     def successor(self, k=0) -> URI:
         return self._successor
+    
+    @successor.setter
+    def successor(self, n: URI):
+        ''' Setter for the successor attribute. '''
+        self._successor = n
+
+        # Logging.
+        if n is not None:
+            name = f'{n.host}[id={id(n):.1e}]'
+            if self.address == n:
+                name = 'self'
+            elif self.address == self.predecessor:
+                name = 'predecessor'
+            logger.info(f'Successor set to {name}.')
 
     @property
     def predecessor(self) -> URI:
         return self._predecessor
 
+    @predecessor.setter
+    def predecessor(self, n: URI):
+        ''' Setter for the predecessor attribute. '''
+        self._predecessor = n
+
+        # Logging.
+        if n is not None:
+            name = f'{n.host}[id={id(n):.1e}]'
+            if self.address == n:
+                name = 'self'
+            elif self.address == self.successor:
+                name = 'successor'
+            logger.info(f'Predecessor set to {name}.')
 
     # Exposed RPCs:
     def find_successor(self, x: int) -> URI:
@@ -77,18 +108,17 @@ class ChordNode:
         
         # Trivial cases for the ring being one-node long.
         if self.successor is None or self.successor == self.address:
-            self.logger.debug(f'there is no successor.')
+            logger.debug(f'No successor to find.')
             return self.address
         
         # Search if `x` belongs to this node's domain, otherwise check the finger table.
-        # if self.id < x <= id(self.successor):
-        #     return self.successor
-        # elif self.id > id(self.successor) and (self.id < x or x <= id(self.successor)): 
         if in_circular_interval(x, l=self.id, r=id(self.successor)):
             return self.successor
+        elif (cp_addr :=  self.closest_preceding_node(x)) == self.address:
+            return self.address
         else:
-            with Proxy(self.closest_preceding_node(x)) as n:
-                # closest_preceding_node() guarantees that the returned node is alive.
+            # closest_preceding_node() guarantees that the returned node is alive.
+            with Proxy(cp_addr) as n:
                 return n.find_successor(x)
 
     def closest_preceding_node(self, x: int) -> URI:
@@ -102,27 +132,23 @@ class ChordNode:
         for f_addr in reversed(self._finger_table):
             if f_addr and in_circular_interval(id(f_addr), l=self.id, r=x) and reachable(f_addr):
                 return f_addr
-            else:
-                continue
         return self.address
 
     def join(self, addr: URI):
         ''' Join a CHORD ring containing node `n`. '''
         if reachable(addr):
-            self.logger.info(f'attempting to join node {addr}<id={id(addr):.2e}>.')
             with Proxy(addr) as n:
-                self._predecessor = None
-                self._successor = n.find_successor(self.id)
-                self.logger.info(f'Joined the ring with successor {addr}<id={id(addr):.2e}>.')
+                logger.info(f'Joined a DHT ring containing {addr}.')
+                self.predecessor = None
+                self.successor = n.find_successor(self.id)
         else:
-            self.logger.error(f'Could not join the ring, node {addr}<id={id(addr):.2e}> unreachable.')
+            logger.error(f'Could not join the ring, node {addr}<id={id(addr):.2e}> unreachable.')
 
     def notify(self, n: URI):
         ''' Remote procedure call from node `n` announcing it might be this node's
         predecessor. Assumes `n` alive since it's the one who invoked this method. '''
-        if not self.predecessor or (id(self.predecessor) < id(n) < self.id):
-            self._predecessor = n
-            self.logger.info(f'Found new predecessor {n}<id={id(n):.2e}>.')
+        if not self.predecessor or in_circular_interval(id(n), l=id(self.predecessor), r=self.id):
+            self.predecessor = n
 
 
     # Periodic methods:
@@ -131,35 +157,36 @@ class ChordNode:
         inserted themselves unannounced. This method is called periodically. '''
         
         if self.successor is None:
-            self.logger.info(f'successor is dead.')
+            logger.info(f'successor is dead.')
             raise NotImplementedError()
         if self.successor == self.address:
             if self.predecessor:
-                self._successor = self.predecessor
+                self.successor = self.predecessor
             return
         try:
             with Proxy(self.successor) as s:
                 x = s.predecessor
-                if (x is not None) and (self.id < id(x) < id(self.successor)) and reachable(x):
-                    self._successor = x
-                    self.logger.info(f'found new successor {x}<id={id(x):.2e}>.')
-            with Proxy(self.successor) as s:
+                if ((x is not None)
+                and in_circular_interval(id(x), l=self.id, r=id(self.successor))
+                and reachable(x)):
+                    self.successor = x
                 s.notify(self.address)
         except Pyro4.errors.CommunicationError:
-            self.logger.error(f'Could not reach successor {self.successor}.')
-            self._successor = self.address
+            logger.error(f'Could not reach successor {self.successor}.')
+            self.successor = self.address
 
     def _fix_fingers(self):
         ''' Refresh finger table entries. This method is called periodically. '''
         i = self._current_finger
         n = (self.id + 2**i) % 2**SHA1_BIT_COUNT
         self._finger_table[i] = self.find_successor(n)
+        assert isinstance(self._finger_table[i], URI), 'finger table entry is not a URI object.'
     
     def _check_predecessor(self):
         ''' Check for predecessor failure. '''
         if self.predecessor and not reachable(p := self.predecessor):
-            self._predecessor = None
-            self.logger.info(f'predecessor {p}<id={id(p):.2e}> is dead.')
+            logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is dead.')
+            self.predecessor = None
 
     def _handle_periodic_calls(self):
         ''' Periodically call all periodic methods. '''
@@ -168,20 +195,20 @@ class ChordNode:
                 self._check_predecessor()
                 self._stabilize()
                 self._fix_fingers()
-                time.sleep(0.01)
+                time.sleep(1)
             except Pyro4.errors.ConnectionClosedError as e:
-                self.logger.error(str(e))
+                logger.error(str(e))
                 continue
 
 
     # Helper / debugging methods:
     def debug_dump_finger_table(self):
         ''' Debugging method to dump the finger table. '''
-        self.logger.debug(f'finger table: {self._finger_table}')
+        logger.debug(f'finger table: {self._finger_table}')
 
     def debug_dump_successors(self):
         ''' Debugging method to dump the successors. '''
-        self.logger.debug(f'successors: {self._successor}')
+        logger.debug(f'successors: {self._successor}')
     
     def debug_get_ring_topology(self) -> tuple[list, bool]:
         ''' Debugging method to get all reachable nodes of the CHORD ring. Returns
