@@ -1,11 +1,12 @@
 import time
 import logging
 import threading
+from typing import Any, Union
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
 
-from server.utils import alive, reachable, id, in_circular_interval, SHA1_BIT_COUNT
+from server.utils import alive, reachable, id, in_arc, SHA1_BIT_COUNT
 from server.dht.logger import logger
 
 DHT_NAME = 'chord.dht'
@@ -35,6 +36,9 @@ class ChordNode:
         packed_data = {'URI': f'{self.address.host}, {self._id:.1e}'}
         logger = logging.LoggerAdapter(logger, packed_data)
         
+        # Partial hash table values.
+        self._items: dict[int, Any] = {}
+
         # Finger table and its stabilization.
         self._finger_table = [None] * FINGER_TABLE_SIZE
         self._current_finger_ = 0   # Self updating counter for finger table.
@@ -112,7 +116,7 @@ class ChordNode:
             return self.address
         
         # Search if `x` belongs to this node's domain, otherwise check the finger table.
-        if in_circular_interval(x, l=self.id, r=id(self.successor)):
+        if in_arc(x, l=self.id, r=id(self.successor)):
             return self.successor
         elif (cp_addr :=  self.closest_preceding_node(x)) == self.address:
             return self.address
@@ -130,7 +134,7 @@ class ChordNode:
         
         # Iterate finger table in reverse order, skipping the last one.
         for f_addr in reversed(self._finger_table):
-            if f_addr and in_circular_interval(id(f_addr), l=self.id, r=x) and reachable(f_addr):
+            if f_addr and in_arc(id(f_addr), l=self.id, r=x) and reachable(f_addr):
                 return f_addr
         return self.address
 
@@ -147,8 +151,87 @@ class ChordNode:
     def notify(self, n: URI):
         ''' Remote procedure call from node `n` announcing it might be this node's
         predecessor. Assumes `n` alive since it's the one who invoked this method. '''
-        if not self.predecessor or in_circular_interval(id(n), l=id(self.predecessor), r=self.id):
+        if not self.predecessor or in_arc(id(n), l=id(self.predecessor), r=self.id):
             self.predecessor = n
+
+
+    # Hash table operations:
+    def insert(self, key: Union[str,int], value: Any, append=False, safe=False):
+        ''' Inserts a new key-value pair into the partial hash table. '''
+        
+        # Makes no sense to insert empty/none values.
+        if key is None or value is None:
+            logger.error(f'Cannot insert a None value or key.')
+            return
+
+        # Find the appropriate DHT node to father the key.
+        key_id = key if isinstance(key, int) else id(key)
+        addr = self.find_successor(key_id)
+        
+        # Key belongs to this node.
+        if addr == self.address:
+
+            # Save element to local partial table.
+            if not safe or key_id not in self._items:
+                self._items[key_id] = value
+
+            # Replication.
+            pass
+        
+            logger.info(f"Inserted '{key}'({key_id:.1e}):{value} into node {addr.host}({id(addr.host):.1e}).")
+        
+        # Key belongs to other node.
+        elif reachable(addr):
+            with Proxy(addr) as n:
+                n.insert(key, value, append, safe)
+        else:
+            logger.info(f"Tried to store '{key}'({key_id:.1e}):{value} in node {addr.host}({id(addr.host):.1e}), but it is unreachable.")
+
+    def lookup(self, key: str, default: Any = None) -> Any:
+        ''' Searches the partial hash table for a key and its value. Exception-safe
+        as it returns None if the key is not found. '''
+
+        if key is None:
+            logger.error(f'Cannot insert a None key.')
+            return
+        
+        # Find the DHT node that should have the key.
+        key_id = key if isinstance(key, int) else id(key)
+        addr = self.find_successor(key_id)
+
+        # Key is handled by this node.
+        if addr == self.address:
+            return self._items.get(key_id, default)
+        
+        # Key is handled by another node in the ring.
+        elif reachable(addr):
+            with Proxy(addr) as n:
+                return n.lookup(key, default)
+        else:
+            logger.info(f"Tried to lookup key '{key}' in node {addr.host}({id(addr.host):.1e}), but it is unreachable.") 
+
+    def remove(self, key: str):
+        ''' Searches the partial hash table for a key and its value and removes them. '''
+        
+        if key is None:
+            logger.error(f'Cannot insert a None key.')
+            return
+        
+        # Find the DHT node that should have the key.
+        key_id = key if isinstance(key, int) else id(key)
+        addr = self.find_successor(key_id)
+
+        # Key is handled by this node.
+        if addr == self.address:
+            if self._items.pop(key_id, None) is None:
+                logger.error(f"Key '{key}' not found.")
+        
+        # Key is owned by another node in the ring.
+        elif reachable(addr):
+            with Proxy(addr) as n:
+                return n.remove(key)
+        else:
+            logger.info(f"Tried to remove key '{key}' in node {addr.host}({id(addr.host):.1e}), but it is unreachable.") 
 
 
     # Periodic methods:
@@ -166,8 +249,7 @@ class ChordNode:
         try:
             with Proxy(self.successor) as s:
                 x = s.predecessor
-                if ((x is not None)
-                and in_circular_interval(id(x), l=self.id, r=id(self.successor))
+                if ((x is not None) and in_arc(id(x), l=self.id, r=id(self.successor))
                 and reachable(x)):
                     self.successor = x
                 s.notify(self.address)
@@ -185,7 +267,7 @@ class ChordNode:
     def _check_predecessor(self):
         ''' Check for predecessor failure. '''
         if self.predecessor and not reachable(p := self.predecessor):
-            logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is dead.')
+            logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is unreachable.')
             self.predecessor = None
 
     def _handle_periodic_calls(self):
