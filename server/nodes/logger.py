@@ -30,7 +30,7 @@ master_stdout_handler.setLevel(logging.INFO)
 master_stdout_handler.setFormatter(red_short_formatter)
 master_logger.addHandler(master_stdout_handler)
 
-file_handler = logging.FileHandler('dht.log')
+file_handler = logging.FileHandler('logs/mr-nodes.log')
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 follower_logger.addHandler(file_handler)

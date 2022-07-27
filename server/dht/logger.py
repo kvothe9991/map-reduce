@@ -21,7 +21,7 @@ stdout_handler.setLevel(logging.INFO)
 stdout_handler.setFormatter(short_formatter)
 logger.addHandler(stdout_handler)
 
-file_handler = logging.FileHandler('dht.log')
+file_handler = logging.FileHandler('logs/dht.log')
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
