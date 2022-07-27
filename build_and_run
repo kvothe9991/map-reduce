@@ -1,7 +1,0 @@
-#!/bin/bash
-CONTAINER_NAME="map-reduce_$(date +%H%M%S_%N)"
-
-docker build ./ -t map-reduce:server
-docker run -itd --rm --network=distributed --ip=172.18.0.$1 --name $CONTAINER_NAME map-reduce:server
-docker exec -it $CONTAINER_NAME python main.py
-docker attach $CONTAINER_NAME
