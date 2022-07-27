@@ -1,0 +1,26 @@
+#!/bin/bash
+
+IMAGE_NAME=${1:-'map-reduce:server'}
+CONTAINERS=$(docker ps -a -q --filter ancestor=$IMAGE_NAME)
+
+pids=()
+cleanup() {
+    kill "${pids[@]}"
+}
+trap cleanup EXIT
+
+echo "Tailing $CONTAINERS..."
+while read -r name; do
+    eval "docker logs -f --tail=15 \"$name\" | sed -e \"s/^/[-- $name --] /\" &"
+done <<< "$CONTAINERS"
+
+function _exit {
+    echo
+    echo -n "Stopping tails $(jobs -p | tr '\n' ' ')"
+    echo "..."
+    jobs -p | tr '\n' ' ' | xargs -I % sh -c "kill % || true"
+    echo "Done."
+}
+
+trap _exit EXIT
+wait

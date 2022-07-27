@@ -1,0 +1,35 @@
+#!/bin/bash
+
+N=$1
+IMAGE_NAME=${2:-'map-reduce:server'}
+RAISE_CONTAINER='./scripts/raise_container'
+
+echo 'Killing living containers...'
+'./scripts/kill_all' $IMAGE_NAME
+
+echo 'Building image...'
+docker build ./ -t $IMAGE_NAME
+
+echo 'Starting containers...'
+for k in $(seq 1 $N); do
+    echo "Raising container $k of $N..."
+    $RAISE_CONTAINER $(($k+1)) &
+    if [ "$k" -eq "1" ]; then
+        sleep 5
+    fi
+done
+
+sleep 5
+
+# Tail containers' outputs.
+if [[ $* == *--tail* ]]
+then './scripts/tail_all'
+fi
+
+# Kill containers after usage.
+if [[ $* == *--kill-afterwards* ]]
+then
+    './scripts/kill_all'
+else
+    echo "Done. Don't forget to kill containers when you're done."
+fi
