@@ -1,6 +1,6 @@
 from server.nodes.threader_node import ThreaderNode
 import Pyro4
-from Pyro4 import URI
+from Pyro4 import Proxy, URI
 from typing import List
 
 
@@ -14,9 +14,19 @@ class Follower(ThreaderNode):
         super().__init__(address)
         self._master_address = master_address
 
-    # guarda un buff local
+    # guarda un buff local. Ya no es local. (!)
     def save_buff(self, buff):
-        pass
+        
+        # ...
+
+        # Guardar en el DHT.
+        with Pyro4.locateNS() as nameserver:
+            dht_uri = nameserver.lookup('chord.dht')
+
+        with Proxy(dht_uri) as dht:
+            dht.insert('<key>', buff)
+
+        # ...
 
     # remueve un buff local
     def remove_buff(self, buff):
