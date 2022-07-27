@@ -11,7 +11,7 @@ trap cleanup EXIT
 
 echo "Tailing $CONTAINERS..."
 while read -r name; do
-    eval "docker logs -f --tail=15 \"$name\" | sed -e \"s/^/[-- $name --] /\" &"
+    eval "docker logs -f --tail=15 \"$name\" | sed -e \"s/^/[-- $name --]/\" &"
 done <<< "$CONTAINERS"
 
 function _exit {

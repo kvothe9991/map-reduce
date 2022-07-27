@@ -4,6 +4,7 @@ N=$1
 IMAGE_NAME=${2:-'map-reduce:server'}
 RAISE_CONTAINER='./scripts/raise_container'
 
+
 echo 'Killing living containers...'
 './scripts/kill_all' $IMAGE_NAME
 
@@ -21,15 +22,8 @@ done
 
 sleep 5
 
-# Tail containers' outputs.
-if [[ $* == *--tail* ]]
-then './scripts/tail_all'
-fi
+# Ignore kill. Kill containers after usage.
+trap './scripts/kill_all' EXIT
 
-# Kill containers after usage.
-if [[ $* == *--kill-afterwards* ]]
-then
-    './scripts/kill_all'
-else
-    echo "Done. Don't forget to kill containers when you're done."
-fi
+# Tail containers' outputs.
+'./scripts/tail_all'
