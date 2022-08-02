@@ -1,7 +1,7 @@
 from hashlib import sha1
 from typing import Callable, Union
 from Pyro4 import Proxy, URI
-from Pyro4.errors import CommunicationError
+from Pyro4.errors import CommunicationError, ConnectionClosedError
 
 SHA1_BIT_COUNT = 160
 
@@ -23,10 +23,9 @@ def reachable(addr: URI) -> bool:
     try:
         with Proxy(addr) as proxy:
             proxy._pyroBind()
-    except CommunicationError as e:
-        return False
-    finally:
         return True
+    except Exception as e:
+        return False
 
 def id(key: URI, hash: Callable = sha1) -> int:
     ''' Returns a numerical identifier obtained from hashing an string key.

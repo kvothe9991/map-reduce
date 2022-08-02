@@ -13,7 +13,6 @@ DHT_NAME = 'chord.dht'
 FINGER_TABLE_SIZE = SHA1_BIT_COUNT // 2
 
 
-
 @Pyro4.expose
 @Pyro4.behavior('single')
 class ChordNode:
@@ -151,7 +150,9 @@ class ChordNode:
     def notify(self, n: URI):
         ''' Remote procedure call from node `n` announcing it might be this node's
         predecessor. Assumes `n` alive since it's the one who invoked this method. '''
-        if not self.predecessor or in_arc(id(n), l=id(self.predecessor), r=self.id):
+        if (self.predecessor is None
+        or not reachable(self.predecessor)
+        or in_arc(id(n), l=id(self.predecessor), r=self.id)):
             self.predecessor = n
 
 
@@ -240,17 +241,20 @@ class ChordNode:
         inserted themselves unannounced. This method is called periodically. '''
         
         if self.successor is None:
-            logger.info(f'successor is dead.')
+            logger.info(f'Successor is None.')
             raise NotImplementedError()
         if self.successor == self.address:
             if self.predecessor:
                 self.successor = self.predecessor
             return
+        
         try:
             with Proxy(self.successor) as s:
                 x = s.predecessor
-                if ((x is not None) and in_arc(id(x), l=self.id, r=id(self.successor))
+                if (x is not None
+                and in_arc(id(x), l=self.id, r=id(self.successor))
                 and reachable(x)):
+                    # logger.info(f'Found new successor {x.host}<{id(x)}> between self and old successor {self.successor.host}<{id(self.successor)}>.')
                     self.successor = x
                 s.notify(self.address)
         except Pyro4.errors.CommunicationError:
@@ -260,13 +264,13 @@ class ChordNode:
     def _fix_fingers(self):
         ''' Refresh finger table entries. This method is called periodically. '''
         i = self._current_finger
-        n = (self.id + 2**i) % 2**SHA1_BIT_COUNT
+        n = (self.id + 2**i) % (2**SHA1_BIT_COUNT)
         self._finger_table[i] = self.find_successor(n)
         assert isinstance(self._finger_table[i], URI), 'finger table entry is not a URI object.'
     
     def _check_predecessor(self):
         ''' Check for predecessor failure. '''
-        if self.predecessor and not reachable(p := self.predecessor):
+        if self.predecessor is not None and not reachable(p := self.predecessor):
             logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is unreachable.')
             self.predecessor = None
 
@@ -277,10 +281,9 @@ class ChordNode:
                 self._check_predecessor()
                 self._stabilize()
                 self._fix_fingers()
-                time.sleep(1)
+                time.sleep(0.05)
             except Pyro4.errors.ConnectionClosedError as e:
                 logger.error(str(e))
-                continue
 
 
     # Helper / debugging methods:
