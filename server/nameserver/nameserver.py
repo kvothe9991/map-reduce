@@ -109,7 +109,7 @@ class BoundNameServer:
         logger.info('Starting nameserver check loop.')
         self._keep_checking_loop = True
         while self._keep_checking_loop:
-            time.sleep(10)
+            time.sleep(0.1)
             self.check_NS()
         self.stop()
     
