@@ -7,10 +7,8 @@ import Pyro4.errors
 from Pyro4 import URI, Proxy
 
 from server.utils import alive, reachable, id, in_arc, SHA1_BIT_COUNT
+from server.configs import DHT_NAME, DHT_FINGER_TABLE_SIZE
 from server.dht.logger import logger
-
-DHT_NAME = 'chord.dht'
-FINGER_TABLE_SIZE = SHA1_BIT_COUNT // 2
 
 
 @Pyro4.expose
@@ -39,7 +37,7 @@ class ChordNode:
         self._items: dict[int, Any] = {}
 
         # Finger table and its stabilization.
-        self._finger_table = [None] * FINGER_TABLE_SIZE
+        self._finger_table = [None] * DHT_FINGER_TABLE_SIZE
         self._current_finger_ = 0   # Self updating counter for finger table.
 
         # Handle periodic stabilization calls.
@@ -57,7 +55,7 @@ class ChordNode:
     def _current_finger(self) -> int:
         ''' Cycles periodically between all `m` fingers of the table. '''
         self._current_finger_ += 1
-        self._current_finger_ %= FINGER_TABLE_SIZE
+        self._current_finger_ %= DHT_FINGER_TABLE_SIZE
         return self._current_finger_
 
     # Exposed attributes:

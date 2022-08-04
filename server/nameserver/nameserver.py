@@ -11,7 +11,6 @@ from Pyro4.naming import NameServerDaemon, BroadcastServer
 from server.utils import alive, reachable, id
 from server.nameserver.logger import logger
 
-NAMESERVER_CHECK_INTERVAL = 5
 
 
 class BoundNameServer:

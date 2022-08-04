@@ -9,13 +9,13 @@ Pyro4.config.SERVERTYPE = 'multiplex'
 Pyro4.config.POLLTIMEOUT = 3
 Pyro4.config.COMMTIMEOUT = 3
 
-from server.nameserver import BoundNameServer
-from server.dht import ChordNode, DHT_NAME
+from server.nameserver import NameServer
+from server.dht import ChordNode
+from server.configs import BROADCAST_PORT, DAEMON_PORT, DHT_NAME
 
+# IP retrieval.
 HOSTNAME = socket.gethostname()
 IP = Pyro4.socketutil.getIpAddress(None, workaround127=True)
-DAEMON_PORT = 8008
-BROADCAST_PORT = 8009
 
 # Daemon objects.
 DAEMON = Pyro4.Daemon(host=IP, port=DAEMON_PORT)
@@ -41,14 +41,16 @@ if __name__ == '__main__':
     logger.propagate = 0
     logger.info(f'Started with:\n\t{HOSTNAME=}\n\t{IP=}.')
 
+    # DHT integration using NS syntax.
     with NS.bind() as ns:
         try:
             ring_uri = ns.lookup(DHT_NAME)
             DHT.join(ring_uri)
         except Pyro4.errors.NamingError:
             ns.register(DHT_NAME, DHT_URI)
-            logger.info(f'No DHT found. Registered {DHT_NAME} at {DHT_URI}.')
+            logger.info(f'No DHT found. Registered {DHT_NAME} at nameserver {DHT_URI}.')
     
+    # Run combined daemons until SIGINT / SIGKILL.
     try:
         DAEMON.requestLoop()
     except KeyboardInterrupt:
