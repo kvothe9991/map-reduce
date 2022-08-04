@@ -1,0 +1,88 @@
+#!/bin/bash
+
+help() {
+    echo "Usage:"
+    echo "    batch_run CONTAINER_COUNT [IMAGE_NAME] [-d|--destroy] [-h|--help] [-t|--tail]"
+    echo "Options:"
+    echo "    -d, --destroy     destroy the containers after run."
+    echo "    -h, --help        display this help."
+    echo "    -t, --tail        tail the logs of the containers."
+    exit 2
+}
+
+SHRT=t,d,h
+LONG=tail,destroy,help
+OPTS=$(getopt -a -n batch_run --options $SHRT --longoptions $LONG -- "$@")
+
+
+# Check for existance of at least one argument.
+if [ $# -eq 0 ]; then
+    help
+fi
+
+# Remove '--' case.
+eval set -- "$OPTS"
+
+# Parse and handle options/flags.
+while :
+do
+    case "$1" in
+        -t | --tail)
+            TAIL=true
+            shift
+            ;;
+        -d | --destroy)
+            DESTROY=true
+            shift
+            ;;
+        -h | --help)
+            help
+            ;;
+        --)
+            # Found positional arguments. Stop parsing options
+            shift
+            break
+            ;;
+        *)
+            echo "Unexpected option: $1"
+            help
+            ;;
+    esac
+done
+
+# Positional arguments.
+N=$1
+IMAGE_NAME=${2:-'map-reduce:server'}
+RAISE_CONTAINER='./scripts/run_container'
+
+
+# Main logic.
+echo 'Killing living containers...'
+'./scripts/batch_kill' $IMAGE_NAME
+
+echo 'Building image...'
+docker build ./ -t $IMAGE_NAME
+
+echo 'Starting containers...'
+for k in $(seq 1 $N); do
+    echo "Raising container $k of $N..."
+    $RAISE_CONTAINER $(($k+1)) &> /dev/null &
+    if [ "$k" -eq "1" ]; then
+        sleep 5
+    fi
+done
+
+
+# Handle cleanup.
+if [ "$DESTROY" ]
+then
+    trap './scripts/batch_kill' EXIT
+fi
+
+if [ "$TAIL" ]
+then
+    sleep 5
+    './scripts/batch_tail'
+else
+    sleep infinity
+fi
