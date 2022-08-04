@@ -12,51 +12,42 @@ from server.utils import alive, reachable, id
 from server.nameserver.logger import logger
 
 
-class NameServer:
-    '''
-    A wrapper around a Pyro nameserver connection.
 
-    Searches for a nameserver to bind to in the local network, otherwise starts up
-    a nameserver thread from this machine. Multiple, simultaneous nameservers in the
-    network are contested by hash/id precedence.
-
-    '''
-    
-    def __init__(self, ip: str, port = 8008):
-        ''' Initialize the nameserver wrapper, then start it up. '''
+class BoundNameServer:
+    ''' A wrapper around a Pyro nameserver connection. '''
+    def __init__(self, ip: str, port: int = 8008):
+        self._ip = ip
+        self._port = port
 
         # Logger config.
         global logger
-        logger = logging.LoggerAdapter(logger, {'URI': ip})
+        logger = logging.LoggerAdapter(logger, {'URI': self._ip})
 
-        # Self attributes.
-        self._ip = ip
-        self._port = port
+        self.uri: URI = None
         self._ns_thread: Thread = None
         self._ns_daemon: NameServerDaemon = None
         self._ns_broadcast: BroadcastServer = None
         self._keep_checking_loop = True
 
         # Initial search for nameserver.
-        self.uri: URI = None
-        if uri := self._locate_NS():
+        if uri := self.locate_NS():
             logger.info(f'Found existing nameserver {uri}.')
             self.uri = uri
         else:
             self.start()
 
     def __str__(self):
-        status = 'remote' if self.is_remote else 'local'
-        return f'{self.__class__.__name__}({status})@[{self.uri}]'
+        status = 'remote' if self._remote else 'local'
+        return f'BoundNameServer<{status}>@[{self.uri}]'
     
     def __repr__(self):
         return str(self)
     
     @property
-    def is_remote(self) -> bool:
-        return self._ns_thread and not self._ns_thread.is_alive()
+    def remote(self) -> bool:
+        return self._ns_thread is None or not self._ns_thread.is_alive()
 
-    def _locate_NS(self) -> Union[URI, None]:
+    def locate_NS(self) -> Union[URI, None]:
         ''' Attempts to locate a remote nameserver. Returns its URI if found. '''
         try:
             with Pyro4.locateNS() as ns:
@@ -87,19 +78,19 @@ class NameServer:
     
     def check_NS(self):
         ''' Checks for a nameserver in the network. Announces self otherwise. '''
-        if self.is_remote:
+        if self.remote:
             if reachable(self.uri):
                 logger.debug(f'Remote nameserver {self.uri} is reachable as expected.')
             else:
                 logger.warning(f'Remote nameserver {self.uri} is not reachable.')
-                if new_uri := self._locate_NS():
+                if new_uri := self.locate_NS():
                     logger.info(f'Found new nameserver {new_uri}.')
                     self.uri = new_uri
                 else:
                     logger.warning(f'No new nameserver found. Announcing self.')
                     self.start()
         else:
-            if (new_uri := self._locate_NS()) is not None and new_uri != self.uri:
+            if (new_uri := self.locate_NS()) is not None and new_uri != self.uri:
                 logger.info(f'Found contesting nameserver {new_uri}.')
                 if id(self.uri) < id(new_uri):
                     logger.info(f'I am still the nameserver.')
@@ -112,7 +103,7 @@ class NameServer:
         '''
         Higher level loop to run in a daemonized thread. Checks for a nameserver
         and spawns one if there is none running in the network.  The
-        `self._keep_checking_loop` attribute is used to stop the loop externally.
+        `self._keep_checking_loop` attribute is used to stop the loop.
         '''
         logger.info('Starting nameserver check loop.')
         self._keep_checking_loop = True

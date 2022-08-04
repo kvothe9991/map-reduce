@@ -1,1 +1,1 @@
-from server.nameserver.nameserver import NameServer
+from server.nameserver.nameserver import BoundNameServer
