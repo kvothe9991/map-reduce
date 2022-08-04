@@ -25,7 +25,7 @@ DHT = ChordNode(URI(f'PYRO:{DHT_NAME}@{IP}:{DAEMON_PORT}'))
 DHT_URI = DAEMON.register(DHT, DHT_NAME)
 
 # Nameserver.
-NS = BoundNameServer(IP, BROADCAST_PORT)
+NS = NameServer(IP, BROADCAST_PORT)
 NS_THREAD = threading.Thread(target=NS.check_NS_loop)
 NS_THREAD.setDaemon(True)
 NS_THREAD.start()
