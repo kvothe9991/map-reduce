@@ -5,14 +5,13 @@ help() {
     echo "    batch_run CONTAINER_COUNT [IMAGE_NAME] [-d|--destroy] [-h|--help] [-t|--tail]"
     echo "Options:"
     echo "    -d, --destroy     destroy the containers after run."
-    echo "    -n, --no-build    do not build from current state, use image from last build."
     echo "    -h, --help        display this help."
     echo "    -t, --tail        tail the logs of the containers."
     exit 2
 }
 
-SHRT=t,d,n,h
-LONG=tail,destroy,no-build,help
+SHRT=t,d,h
+LONG=tail,destroy,help
 OPTS=$(getopt -a -n batch_run --options $SHRT --longoptions $LONG -- "$@")
 
 
@@ -34,10 +33,6 @@ do
             ;;
         -d | --destroy)
             DESTROY=true
-            shift
-            ;;
-        -n | --no-build)
-            NO_BUILD=true
             shift
             ;;
         -h | --help)
@@ -65,12 +60,8 @@ RAISE_CONTAINER='./scripts/run_container'
 echo 'Killing living containers...'
 './scripts/batch_kill' $IMAGE_NAME
 
-## Build image?
-if [ -z "$NO_BUILD" ]
-then
-    echo 'Building image...'
-    docker build ./ -t $IMAGE_NAME
-fi
+echo 'Building image...'
+docker build ./ -t $IMAGE_NAME
 
 echo 'Starting containers...'
 for k in $(seq 1 $N); do
