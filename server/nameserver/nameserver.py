@@ -19,6 +19,18 @@ class BoundNameServer:
         self._ip = ip
         self._port = port
 
+    TODO:
+    - Class-wide cleanup and documentation.
+    - Nameserver persistance (perhaps on DHT?).
+    - Online/offline API as an external delegation alternative.
+        + Perhaps this entails a serious feature extrapolation from this class to another.
+    - After previous item:
+        + Implement master nodes on top of nameserver.
+    '''
+    
+    def __init__(self, ip: str, port = 8008):
+        ''' Initialize the nameserver wrapper, then start it up. '''
+
         # Logger config.
         global logger
         logger = logging.LoggerAdapter(logger, {'URI': self._ip})
