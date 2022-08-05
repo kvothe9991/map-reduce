@@ -10,7 +10,6 @@ from server.utils import alive, reachable, id, in_arc, SHA1_BIT_COUNT
 from server.configs import DHT_NAME, DHT_FINGER_TABLE_SIZE
 from server.dht.logger import logger
 
-
 @Pyro4.expose
 @Pyro4.behavior('single')
 class ChordNode:
