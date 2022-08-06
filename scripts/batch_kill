@@ -4,6 +4,6 @@ IMAGE_NAME=${1:-'map-reduce:server'}
 
 echo "Killing all $IMAGE_NAME containers..."
 for ctnr in $(docker ps -a -q --filter ancestor=$IMAGE_NAME); do
-    echo "Killed $(docker stop $ctnr)"
+    echo "Killed $(docker kill $ctnr)"
 done
 echo 'Done.'
