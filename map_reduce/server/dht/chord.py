@@ -180,7 +180,7 @@ class ChordNode:
             # Replication.
             pass
         
-            logger.info(f"Inserted '{key}'({key_id:.1e}):{value} into node {addr.host}({id(addr.host):.1e}).")
+            logger.info(f"Inserted '{key}'({key_id:.1e}):{value}.")
         
         # Key belongs to other node.
         elif reachable(addr):

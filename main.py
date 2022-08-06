@@ -1,5 +1,4 @@
-import logging
-import socket, threading
+import logging, socket, threading
 import Pyro4
 import Pyro4.errors
 import Pyro4.naming
@@ -7,11 +6,12 @@ import Pyro4.socketutil
 from Pyro4 import Proxy, URI
 Pyro4.config.SERVERTYPE = 'multiplex'
 Pyro4.config.POLLTIMEOUT = 3
-Pyro4.config.COMMTIMEOUT = 3
 
-from server.nameserver import NameServer
-from server.dht import ChordNode
-from server.configs import BROADCAST_PORT, DAEMON_PORT, DHT_NAME
+from map_reduce.server.nameserver import NameServer
+from map_reduce.server.dht import ChordNode
+from map_reduce.server.configs import ( BROADCAST_PORT, DAEMON_PORT, DHT_NAME,
+                                        MAIN_LOGGING_COLOR, MAIN_LOGGING_LEVEL )
+from map_reduce.server.logger import get_logger
 
 # IP retrieval.
 HOSTNAME = socket.gethostname()
@@ -34,12 +34,9 @@ NS_THREAD.start()
 
 
 if __name__ == '__main__':
-    
     # Preface logging.
-    logger = logging.getLogger('[MAIN]')
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = 0
-    logger.info(f'Started with:\n\t{HOSTNAME=}\n\t{IP=}.')
+    logger = get_logger('main', MAIN_LOGGING_LEVEL, MAIN_LOGGING_COLOR)
+    logger = logging.LoggerAdapter(logger, {'IP': IP})
 
     # DHT integration using NS syntax.
     with NS.bind() as ns:

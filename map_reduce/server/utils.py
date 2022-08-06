@@ -30,8 +30,9 @@ def reachable(addr: URI) -> bool:
 def id(key: URI, hash: Callable = sha1) -> int:
     ''' Returns a numerical identifier obtained from hashing an string key.
     Additional support for Pyro URIs for convenience. '''
-    assert isinstance(key, URI), 'address to id must be provided in URI form.'
-    key = key.host
+    # assert isinstance(key, URI), 'address to id must be provided in URI form.'
+    if isinstance(key, URI):
+        key = key.host
     hex_hash = hash(key.encode('utf8')).hexdigest()
     return int(hex_hash, base=16)
 
