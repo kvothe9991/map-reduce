@@ -8,8 +8,11 @@ import Pyro4.naming
 from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
 
-from server.utils import alive, reachable, id
-from server.nameserver.logger import logger
+from map_reduce.server.utils import alive, reachable, id
+from map_reduce.server.configs import NS_LOGGING_LEVEL, NS_LOGGING_COLOR
+from map_reduce.server.logger import get_logger
+
+logger = get_logger('ns  ', NS_LOGGING_LEVEL, NS_LOGGING_COLOR)
 
 
 class NameServer:
@@ -34,7 +37,7 @@ class NameServer:
 
         # Logger config.
         global logger
-        logger = logging.LoggerAdapter(logger, {'URI': ip})
+        logger = logging.LoggerAdapter(logger, {'IP': ip})
 
         # Self attributes.
         self._ip = ip
