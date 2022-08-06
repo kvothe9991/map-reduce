@@ -2,13 +2,16 @@ import time
 import logging
 import threading
 from typing import Any, Union
+
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
 
-from server.utils import alive, reachable, id, in_arc, SHA1_BIT_COUNT
-from server.configs import DHT_NAME, DHT_FINGER_TABLE_SIZE
-from server.dht.logger import logger
+from map_reduce.server.configs import DHT_FINGER_TABLE_SIZE, DHT_LOGGING_LEVEL, DHT_LOGGING_COLOR
+from map_reduce.server.logger import get_logger
+from map_reduce.server.utils import id, in_arc, reachable, SHA1_BIT_COUNT
+
+logger = get_logger('dht ', DHT_LOGGING_LEVEL, DHT_LOGGING_COLOR, extras=True)
 
 
 @Pyro4.expose
@@ -30,8 +33,8 @@ class ChordNode:
         
         # Logging setup:
         global logger
-        packed_data = {'URI': f'{self.address.host}, {self._id:.1e}'}
-        logger = logging.LoggerAdapter(logger, packed_data)
+        logger = logging.LoggerAdapter(logger, {'IP': self._address.host,
+                                                'extra': f'self={self._id:.2e}'})
         
         # Partial hash table values.
         self._items: dict[int, Any] = {}

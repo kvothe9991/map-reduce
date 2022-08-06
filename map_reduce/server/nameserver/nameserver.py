@@ -8,8 +8,11 @@ import Pyro4.naming
 from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
 
-from server.utils import alive, reachable, id
-from server.nameserver.logger import logger
+from map_reduce.server.utils import alive, reachable, id
+from map_reduce.server.configs import NS_LOGGING_LEVEL, NS_LOGGING_COLOR
+from map_reduce.server.logger import get_logger
+
+logger = get_logger('ns  ', NS_LOGGING_LEVEL, NS_LOGGING_COLOR)
 
 
 class NameServer:
@@ -20,6 +23,13 @@ class NameServer:
     a nameserver thread from this machine. Multiple, simultaneous nameservers in the
     network are contested by hash/id precedence.
 
+    TODO:
+    - Class-wide cleanup and documentation.
+    - Nameserver persistance (perhaps on DHT?).
+    - Online/offline API as an external delegation alternative.
+        + Perhaps this entails a serious feature extrapolation from this class to another.
+    - After previous item:
+        + Implement master nodes on top of nameserver.
     '''
     
     def __init__(self, ip: str, port = 8008):
@@ -27,7 +37,7 @@ class NameServer:
 
         # Logger config.
         global logger
-        logger = logging.LoggerAdapter(logger, {'URI': ip})
+        logger = logging.LoggerAdapter(logger, {'IP': ip})
 
         # Self attributes.
         self._ip = ip

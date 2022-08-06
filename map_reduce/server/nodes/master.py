@@ -1,8 +1,12 @@
-from server.nodes.threader_node import ThreaderNode
 import Pyro4
+import logging
 from Pyro4 import URI
 from utils import alive
 
+from map_reduce.server.nodes.threader_node import ThreaderNode
+from map_reduce.server.logger import get_logger
+
+logger = get_logger('mstr', logging.INFO, '\x1b[1;31m') # Red color.
 
 class FileSystem:
     def __init__(self) -> None:
