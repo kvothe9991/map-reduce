@@ -6,7 +6,7 @@ from Pyro4 import Proxy, URI
 from map_reduce.server.nodes.threader_node import ThreaderNode
 from map_reduce.server.logger import get_logger
 
-logger = get_logger('flwr', logging.INFO, '\x1b[1;31m') # Red color.
+logger = get_logger('flwr')
 
 
 @Pyro4.expose

@@ -6,7 +6,7 @@ from utils import alive
 from map_reduce.server.nodes.threader_node import ThreaderNode
 from map_reduce.server.logger import get_logger
 
-logger = get_logger('mstr', logging.INFO, '\x1b[1;31m') # Red color.
+logger = get_logger('mstr')
 
 class FileSystem:
     def __init__(self) -> None:

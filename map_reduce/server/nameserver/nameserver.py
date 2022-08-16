@@ -9,11 +9,10 @@ from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
 
 from map_reduce.server.utils import alive, reachable, id
-from map_reduce.server.configs import NS_LOGGING_LEVEL, NS_LOGGING_COLOR
 from map_reduce.server.logger import get_logger
 
-logger = get_logger('ns  ', NS_LOGGING_LEVEL, NS_LOGGING_COLOR)
 
+logger = get_logger('ns')
 
 class NameServer:
     '''

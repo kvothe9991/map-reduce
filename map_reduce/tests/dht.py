@@ -1,9 +1,12 @@
 import Pyro4
+import logging
 from Pyro4 import Proxy
 from Pyro4.naming import NameServer
 
 from map_reduce.server.dht import ChordNode
 from map_reduce.server.configs import DHT_NAME
+
+logger = get_logger('test', adapter={'IP': ''})
 
 
 # Test 1.
