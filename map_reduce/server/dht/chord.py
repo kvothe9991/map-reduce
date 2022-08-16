@@ -117,7 +117,6 @@ class ChordNode:
         
         # Trivial cases for the ring being one-node long.
         if self.successor is None or self.successor == self.address:
-            logger.debug(f'No successor to find.')
             return self.address
         
         # Search if `x` belongs to this node's domain, otherwise check the finger table.
@@ -161,86 +160,6 @@ class ChordNode:
         or in_arc(id(n), l=id(self.predecessor), r=self.id)):
             self.predecessor = n
 
-
-    # Hash table operations:
-    def insert(self, key: Union[str,int], value: Any, append=False, safe=False):
-        ''' Inserts a new key-value pair into the partial hash table. '''
-        
-        # Makes no sense to insert empty/none values.
-        if key is None or value is None:
-            logger.error(f'Cannot insert a None value or key.')
-            return
-
-        # Find the appropriate DHT node to father the key.
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self.find_successor(key_id)
-        
-        # Key belongs to this node.
-        if addr == self.address:
-
-            # Save element to local partial table.
-            if not safe or key_id not in self._items:
-                self._items[key_id] = value
-
-            # Replication.
-            pass
-        
-            logger.info(f"Inserted '{key}'({key_id:.1e}):{value}.")
-        
-        # Key belongs to other node.
-        elif reachable(addr):
-            with Proxy(addr) as n:
-                n.insert(key, value, append, safe)
-        else:
-            logger.info(f"Tried to store '{key}'({key_id:.1e}):{value} in node {addr.host}({id(addr.host):.1e}), but it is unreachable.")
-
-    def lookup(self, key: str, default: Any = None) -> Any:
-        ''' Searches the partial hash table for a key and its value. Exception-safe
-        as it returns None if the key is not found. '''
-
-        if key is None:
-            logger.error(f'Cannot insert a None key.')
-            return
-        
-        # Find the DHT node that should have the key.
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self.find_successor(key_id)
-
-        # Key is handled by this node.
-        if addr == self.address:
-            return self._items.get(key_id, default)
-        
-        # Key is handled by another node in the ring.
-        elif reachable(addr):
-            with Proxy(addr) as n:
-                return n.lookup(key, default)
-        else:
-            logger.info(f"Tried to lookup key '{key}' in node {addr.host}({id(addr.host):.1e}), but it is unreachable.") 
-
-    def remove(self, key: str):
-        ''' Searches the partial hash table for a key and its value and removes them. '''
-        
-        if key is None:
-            logger.error(f'Cannot insert a None key.')
-            return
-        
-        # Find the DHT node that should have the key.
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self.find_successor(key_id)
-
-        # Key is handled by this node.
-        if addr == self.address:
-            if self._items.pop(key_id, None) is None:
-                logger.error(f"Key '{key}' not found.")
-        
-        # Key is owned by another node in the ring.
-        elif reachable(addr):
-            with Proxy(addr) as n:
-                return n.remove(key)
-        else:
-            logger.info(f"Tried to remove key '{key}' in node {addr.host}({id(addr.host):.1e}), but it is unreachable.") 
-
-
     # Periodic methods:
     def _stabilize(self):
         ''' Verify it's own immediate succesor, checking for new nodes that may have
@@ -260,7 +179,6 @@ class ChordNode:
                 if (x is not None
                 and in_arc(id(x), l=self.id, r=id(self.successor))
                 and reachable(x)):
-                    # logger.info(f'Found new successor {x.host}<{id(x)}> between self and old successor {self.successor.host}<{id(self.successor)}>.')
                     self.successor = x
                 s.notify(self.address)
         except Pyro4.errors.CommunicationError:
