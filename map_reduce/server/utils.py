@@ -39,4 +39,7 @@ def id(key: URI, hash: Callable = sha1) -> int:
 def in_arc(x: int, l: int, r: int):
     assert l != r, f'Left and right bounds must not be equal for circular comparison.'
     return (l < x <= r) or ((l > r) and (l < x or x <= r))
-    # return (l < x <= r) if l <= r else (l < x or x <= r)
+
+def unpack(uri: URI):
+    assert isinstance(uri, URI), 'Provided `uri` to unpack must be of type `Pyro4.URI`.'
+    return uri.object, uri.host, uri.port

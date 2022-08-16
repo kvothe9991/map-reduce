@@ -6,13 +6,14 @@ from typing import Any, Union
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
+from Pyro4.errors import CommunicationError, ConnectionClosedError
 
-from map_reduce.server.configs import DHT_FINGER_TABLE_SIZE, DHT_LOGGING_LEVEL, DHT_LOGGING_COLOR
+from map_reduce.server.configs import DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL
 from map_reduce.server.logger import get_logger
 from map_reduce.server.utils import id, in_arc, reachable, SHA1_BIT_COUNT
 
-logger = get_logger('dht ', DHT_LOGGING_LEVEL, DHT_LOGGING_COLOR, extras=True)
 
+logger = get_logger('dht', extras=True)
 
 @Pyro4.expose
 @Pyro4.behavior('single')
@@ -25,6 +26,10 @@ class ChordNode:
         The `successor_cache_size` argument defines the amount of successors accounted
         for to mantain robustness of CHORD's stability in case of several contigous
         nodes failing simultaneously.
+
+        TODO:
+            . Register periodic methods on another Daemon serving.
+            | Setup stops on periodic methods while the main API is being processed.
         '''
         self._address = address # Pyro4 URI of this node.
         self._id = id(address)  # Numerical identifier of this node.
@@ -277,14 +282,19 @@ class ChordNode:
 
     def _handle_periodic_calls(self):
         ''' Periodically call all periodic methods. '''
+        # TODO: Somewhere here spawned error: "'NoneType' object has no attribute 'encode'".
         while True:
             try:
                 self._check_predecessor()
                 self._stabilize()
                 self._fix_fingers()
-                time.sleep(0.05)
-            except Pyro4.errors.ConnectionClosedError as e:
+                time.sleep(DHT_STABILIZATION_INTERVAL)
+            except (ConnectionClosedError, ConnectionError) as e:
                 logger.error(str(e))
+            except Pyro4.errors.TimeoutError as e:
+                logger.error(str(e))
+            except Exception as e:
+                logger.error(f'Other error: {str(e)}.')
 
 
     # Helper / debugging methods:

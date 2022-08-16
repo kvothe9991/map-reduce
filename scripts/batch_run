@@ -77,7 +77,7 @@ for k in $(seq 1 $N); do
     echo "Raising container $k of $N..."
     $RAISE_CONTAINER $(($k+1)) &> /dev/null &
     if [ "$k" -eq "1" ]; then
-        sleep 5
+        sleep 1
     fi
 done
 
@@ -90,7 +90,7 @@ fi
 
 if [ "$TAIL" ]
 then
-    sleep 5
+    sleep 2
     './scripts/batch_tail'
 else
     sleep infinity
