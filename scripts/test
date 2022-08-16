@@ -11,4 +11,7 @@ docker run -itd --rm --network=distributed --ip=172.18.0.254 --name=$CONTAINER_N
 docker logs -f --tail=15 $CONTAINER_NAME
 
 # Kill the container.
-trap $(docker stop $CONTAINER_NAME) EXIT
+cleanup() {
+    docker kill $CONTAINER_NAME
+}
+trap cleanup EXIT
