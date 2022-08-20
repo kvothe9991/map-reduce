@@ -5,7 +5,7 @@ import Pyro4.errors
 from Pyro4 import URI, Proxy
 
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import reachable, unpack
+from map_reduce.server.utils import reachable, service_address, id
 
 
 logger = get_logger('dht:s')
@@ -19,6 +19,8 @@ class ChordService:
         the provided Pyro4 URI belonging to the underlying node structure, meanwhile
         the `address` attribute contains the actual accessor to this class, with an
         appended 'service' on the name object.
+
+        TODO: Mutual exclusion on self._items requests.
         '''
         self._address = address
         self._node_address = node_address
@@ -47,85 +49,120 @@ class ChordService:
     @property
     def node(self) -> Proxy:
         return Proxy(self._node_address)
-    
+
+    # Exposed RPCs.
     @Pyro4.oneway
     def insert(self, key, value, append=False, safe=False):
-        ''' Inserts a new key-value pair into the partial hash table. '''
+        '''
+        Inserts a new key-value pair into the partial hash table.
+        '''
+        self._assert_key(key)
+        self._assert_value(key, value)
 
-        if key is None or value is None:
-            logger.error(f'Cannot insert a None value or key.')
-            return
-        
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self._find_successor(key_id)
+        key_id = self._obtain_key_id(key)
+        addr = self._find_successor(key, key_id)
         if addr:
             logger.debug(f'Inserting key {key!r} into {addr.host}.')
             if addr == self._node_address:
-                if not safe or key_id not in self._items:
+                if not safe or key not in self._items:
                     self._items[key] = value
+                    logger.info(f'Inserted {key!r}:{value!r}. ({self._items=})')
                 # TODO: Replication.
-                logger.info(f'Inserted {key!r}:{value!r}.')
             elif reachable(addr):
                 serv_addr = service_address(addr)
-                logger.info(f'Insertion redirected to {serv_addr}.')
+                logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
                 with Proxy(serv_addr) as other:
                     other.insert(key, value, append, safe)
             else:
                 logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
-    
-    def lookup(self, key, default=None):
-        ''' Searches the partial hash table for a key. Exception-safe as it returns
-        `default` if the key is not found. '''
+        else:
+            logger.error(f'Successor not found, was None.')
 
-        if key is None:
-            logger.error('Provided key for lookup must not be None.')
-            return
-        
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self._find_successor(key_id)
+
+    def lookup(self, key, default=None):
+        '''
+        Searches the partial hash table for a key. Exception-safe as it returns
+        `default` if the key is not found.
+        '''
+        self._assert_key(key)
+
+        key_id = self._obtain_key_id(key)
+        addr = self._find_successor(key, key_id)
         if addr:
             if addr == self._node_address:
-                return self._items.get(key, default)
+                val = self._items.get(key, default)
+                logger.info(f'Found {key!r}:{val!r} in local table.')
+                return val
             elif reachable(addr):
                 serv_addr = service_address(addr)
-                logger.info(f'Lookup redirected to {serv_addr}.')
+                logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
                 with Proxy(serv_addr) as other:
                     return other.lookup(key, default)
             else:
                 logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
+        else:
+            logger.error(f'Successor not found, was None.')
 
     @Pyro4.oneway
     def remove(self, key):
-        ''' Searches the partial hash table for a key and its value and removes them. '''
-        if key is None:
-            logger.error('Provided key for lookup must not be None.')
-            return
-        
-        key_id = key if isinstance(key, int) else id(key)
-        addr = self._find_successor(key_id)
-        if addr:
+        '''
+        Searches the partial hash table for a key and its value and removes them.
+        '''
+        self._assert_key(key)
+
+        key_id = self._obtain_key_id(key)
+        addr = self._find_successor(key, key_id)
+        if addr is not None:
             if addr == self._node_address:
                 if self._items.pop(key, None) is None:
                     logger.error(f'Key {key!r} not found.')
             elif reachable(addr):
                 serv_addr = service_address(addr)
-                logger.info(f'Removal redirected to {serv_addr}.')
+                logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
                 with Proxy(serv_addr) as other:
                     return other.remove(key)
             else:
                 logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
+        else:
+            logger.error(f'Successor not found, was None.')
 
-    def _find_successor(self, key_id):
+    @Pyro4.oneway
+    def refresh(self):
+        ''' Refreshes the local partial hash table. '''
+        logger.info('Redistributing local partial hash table through ring.')
+        data = self._items
+        self._items.clear()
+        for k,v in data.items():
+            self.insert(k, v, safe=True)
+
+    # Helper methods.
+    def _assert_key(self, key):
+        ''' Asserts that the provided key is not None. Raises ValueError exceptions.'''
+        if key is None:
+            raise ValueError('Provided key must not be None.')
+
+    def _assert_value(self, key, value):
+        ''' Asserts that the provided value is not None. Raises ValueError exceptions.'''
+        if value is None:
+            raise ValueError(f'Provided value for key {key!r} must not be None.')
+    
+    def _obtain_key_id(self, key):
+        ''' Obtains the SHA-1 hash id for a given key. '''
+        key_id = id(key)
+        logger.info(f'Hashed key {key!r} as {key_id}.')
+        return key_id
+
+    def _find_successor(self, key, key_id):
         ''' Proxy exception-safe call for `self.node.find_successor()`. '''
         try:
             with Proxy(self._node_address) as node:
                 owner = node.find_successor(key_id)
-                logger.info(f'Owner of key is {owner}.')
+                logger.info(f'Owner of {key!r} is {owner.host}.')
                 return owner
         except Pyro4.errors.CommunicationError as e:
             logger.error(f"Error accessing own node: '{type(e).__name__}: {e}'")
 
-
-def service_address(uri: URI) -> URI:
-    name, host, port = unpack(uri)
-    return URI(f'PYRO:{name}.service@{host}:{port}')
+    # Debug methods.
+    def debug_dump_items(self):
+        ''' Prints the local partial hash table. '''
+        print(self._items)

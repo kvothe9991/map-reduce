@@ -6,11 +6,13 @@ from typing import Any, Union
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
-from Pyro4.errors import CommunicationError, ConnectionClosedError
+from Pyro4.errors import CommunicationError
 
-from map_reduce.server.configs import DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import id, in_arc, reachable, SHA1_BIT_COUNT
+from map_reduce.server.configs import ( DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL,
+                                        DHT_NAME, DHT_RECHECK_INTERVAL )
+from map_reduce.server.utils import ( id, in_arc, reachable, SHA1_BIT_COUNT, spawn_thread,
+                                      service_address )
 
 
 logger = get_logger('dht', extras=True)
@@ -26,10 +28,6 @@ class ChordNode:
         The `successor_cache_size` argument defines the amount of successors accounted
         for to mantain robustness of CHORD's stability in case of several contigous
         nodes failing simultaneously.
-
-        TODO:
-            . Register periodic methods on another Daemon serving.
-            | Setup stops on periodic methods while the main API is being processed.
         '''
         self._address = address # Pyro4 URI of this node.
         self._id = id(address)  # Numerical identifier of this node.
@@ -40,21 +38,22 @@ class ChordNode:
         global logger
         logger = logging.LoggerAdapter(logger, {'IP': self._address.host,
                                                 'extra': f'self={self._id:.2e}'})
-        
-        # Partial hash table values.
-        self._items: dict[int, Any] = {}
 
         # Finger table and its stabilization.
         self._finger_table = [None] * DHT_FINGER_TABLE_SIZE
         self._current_finger_ = 0   # Self updating counter for finger table.
 
-        # Handle periodic stabilization calls.
-        self._stabilize_thread = threading.Thread(target=self._handle_periodic_calls)
-        self._stabilize_thread.setDaemon(True)
-        self._stabilize_thread.start()
+        # Ring registration on nameserver.
+        self._ring = None
+
+        # Handle periodic calls.
+        self._stabilize_thread = spawn_thread(target=self._handle_periodic_calls)
 
     def __repr__(self):
-        return f'{self.__class__.__name__}<addr={self._address}, id={self._id:.2e}>'
+        addr = self._address
+        count = len(self._items)
+        id_ = f'{self._id:.2e}'
+        return f'{self.__class__.__name__}<({count}), {addr=}, id={id_}>'
 
     def __str__(self):
         return repr(self)
@@ -111,6 +110,7 @@ class ChordNode:
                 name = 'successor'
             logger.info(f'Predecessor set to {name}.')
 
+
     # Exposed RPCs:
     def find_successor(self, x: int) -> URI:
         ''' Return immediate successor of id `x`, in address form. '''
@@ -147,8 +147,11 @@ class ChordNode:
         if reachable(addr):
             with Proxy(addr) as n:
                 logger.info(f'Joined a DHT ring containing {addr}.')
+                self._ring = addr
                 self.predecessor = None
                 self.successor = n.find_successor(self.id)
+                with Proxy(service_address(self._address)) as service:
+                    service.refresh()
         else:
             logger.error(f'Could not join the ring, node {addr}<id={id(addr):.2e}> unreachable.')
 
@@ -159,6 +162,7 @@ class ChordNode:
         or not reachable(self.predecessor)
         or in_arc(id(n), l=id(self.predecessor), r=self.id)):
             self.predecessor = n
+    
 
     # Periodic methods:
     def _stabilize(self):
@@ -198,6 +202,19 @@ class ChordNode:
             logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is unreachable.')
             self.predecessor = None
 
+    def _check_ring_availability(self):
+        '''
+        Check periodically for the ring in the nameserver.
+        '''
+        with Pyro4.locateNS() as ns:
+            try:
+                ring = ns.lookup(DHT_NAME)
+                if ring != self.address and ring != self._ring:
+                    self.join(ring)
+            except Pyro4.errors.NamingError:
+                logger.info(f'No ring found in the nameserver. Announcing self.')
+                ns.register(DHT_NAME, self.address)
+
     def _handle_periodic_calls(self):
         ''' Periodically call all periodic methods. '''
         # TODO: Somewhere here spawned error: "'NoneType' object has no attribute 'encode'".
@@ -206,23 +223,18 @@ class ChordNode:
                 self._check_predecessor()
                 self._stabilize()
                 self._fix_fingers()
+                self._check_ring_availability()
                 time.sleep(DHT_STABILIZATION_INTERVAL)
-            except (ConnectionClosedError, ConnectionError) as e:
-                logger.error(str(e))
-            except Pyro4.errors.TimeoutError as e:
+            except CommunicationError as e:
                 logger.error(str(e))
             except Exception as e:
-                logger.error(f'Other error: {str(e)}.')
+                logger.error(f'{e.__class__.__name__}: {e}.')
 
 
     # Helper / debugging methods:
-    def debug_dump_finger_table(self):
-        ''' Debugging method to dump the finger table. '''
-        logger.debug(f'finger table: {self._finger_table}')
-
-    def debug_dump_successors(self):
+    def debug_dump_successors(self) -> list:
         ''' Debugging method to dump the successors. '''
-        logger.debug(f'successors: {self._successor}')
+        logger.debug(f'successors: {[self._successor]}')
     
     def debug_get_ring_topology(self) -> tuple[list, bool]:
         ''' Debugging method to get all reachable nodes of the CHORD ring. Returns
@@ -230,8 +242,20 @@ class ChordNode:
         whether the ring was completely reachable. '''
         ring = [self.address]
         curr = self.successor
-        while curr and curr != self.address and reachable(curr):
+        while curr is not None and curr != self.address:
             ring.append(curr)
+            if not reachable(curr):
+                break
             with Proxy(curr) as n:
                 curr = n.successor
         return ring, (curr == self.address)
+
+    def debug_to_list(self, partial: list = []) -> list:
+        ''' Return a list of the DHT members. '''
+        if self.successor in partial:
+            if self.successor != partial[0]:
+                L = partial + [self._address, self.successor]
+                logger.warning(f'Non-circular, but cyclical ring found: {L}')
+            return partial
+        with Proxy(self.successor) as s:
+            return s.debug_to_list(partial + [self._address])

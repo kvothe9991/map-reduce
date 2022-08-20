@@ -9,7 +9,7 @@ from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
 from map_reduce.server.configs import NS_CONTEST_INTERVAL
 
-from map_reduce.server.utils import alive, reachable, id
+from map_reduce.server.utils import alive, reachable, id, kill_thread, spawn_thread
 from map_reduce.server.logger import get_logger
 
 
@@ -54,12 +54,6 @@ class NameServer:
     def __repr__(self):
         return str(self)
     
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, *_):
-        self.stop()
-    
     @property
     def is_remote(self) -> bool:
         return self._ip != self._uri.host
@@ -89,26 +83,42 @@ class NameServer:
         logger.info(f'Local nameserver started.')
         self._uri, self._ns_daemon, self._ns_broadcast = Pyro4.naming.startNS(self._ip,
                                                                               self._port)
-        self._ns_thread = Thread(target=self._ns_daemon.requestLoop)
-        self._ns_thread.setDaemon(True)
-        self._ns_thread.start()
-
-        self._broadcast_thread = Thread(target=self._ns_broadcast.runInThread)
-        self._broadcast_thread.setDaemon(True)
-        self._broadcast_thread.start()
+        self._ns_thread = spawn_thread(target=self._ns_daemon.requestLoop)
+        self._broadcast_thread = spawn_thread(target=self._ns_broadcast.runInThread)
     
-    def _stop_local_nameserver(self):
+    def _stop_local_nameserver(self, forward_to: URI = None):
         '''
         Stops the local nameserver (killing its thread and daemons).
         '''
+        if forward_to is not None:
+            # Forward registered objects to new nameserver.
+            new_ns = forward_to
+            try:
+                with Proxy(self._uri) as sender, Proxy(new_ns) as recv:
+                    sender: Pyro4.naming.NameServer
+                    for name, addr in sender.list().items():
+                        try:
+                            recv.register(name, addr, safe=True)
+                        except Pyro4.errors.NamingError as e:
+                            logger.info(f'{e}')
+            except Exception as e:
+                logger.error(f"Error forwarding registry to nameserver {new_ns.host!r}: {e}")
+            
+            # Overwrite the binding address.
+            self._uri = new_ns
+
+        # Shutdown the nameserver.
         self._ns_daemon.shutdown()
         self._ns_daemon = None
-        if self._ns_thread.join(0.1) and self._ns_thread.is_alive():
+        dead = kill_thread(self._ns_thread)
+        if not dead:
             logger.error("Couldn't kill nameserver thread.")
         
+        # Shutdown the broadcast utility server.
         self._ns_broadcast.close()
         self._ns_broadcast = None
-        if self._broadcast_thread.join(0.1) and self._broadcast_thread.is_alive():
+        dead = kill_thread(self._broadcast_thread)
+        if not dead:
             logger.error("Couldn't kill broadcast thread.")
         
         logger.info(f'Local nameserver stopped.')
@@ -123,30 +133,26 @@ class NameServer:
         This method is called periodically by the start() method, but can be used
         externally when sequential checks are needed instead of a parallel thread.
         '''
+        curr_ns = self._uri
+        new_ns = self._locate_nameserver()
+
         if self.is_remote:
-            if not reachable(self._uri):
-                logger.warning(f'Remote nameserver @{self._uri.host} is not reachable.')
-                if (new_uri := self._locate_nameserver()) is not None:
-                    logger.info(f'Found new nameserver @{new_uri.host}.')
-                    self._uri = new_uri
+            if not reachable(curr_ns):
+                logger.warning(f'Remote nameserver @{curr_ns.host} is not reachable.')
+                if new_ns is not None:
+                    logger.info(f'Found new nameserver @{new_ns.host}.')
+                    self._uri = new_ns
                 else:
                     logger.info(f'No new nameserver found. Announcing self.')
                     self._start_local_nameserver()
         else:
-            if (new_uri := self._locate_nameserver()) is not None and new_uri != self._uri:
-                logger.info(f'Found contesting nameserver @{new_uri.host}.')
-                if id(self._uri) >= id(new_uri):
-                    logger.info(f'I no longer am the nameserver, long live {new_uri.host}.')
-                    self._uri = new_uri
-                    self._stop_local_nameserver()
+            if new_ns is not None and new_ns != curr_ns:
+                logger.info(f'Found contesting nameserver @{new_ns.host}.')
+                if id(curr_ns) >= id(new_ns):
+                    logger.info(f'I no longer am the nameserver, long live {new_ns.host}.')
+                    self._stop_local_nameserver(forward_to=new_ns)
                 else:
                     logger.info(f'I am still the nameserver.')
-
-    def _nameserver_loop(self):
-        self._alive = True
-        while self._alive:
-            self.refresh_nameserver()
-            time.sleep(NS_CONTEST_INTERVAL)
 
     def start(self):
         '''
@@ -155,19 +161,23 @@ class NameServer:
         '''
         self._start_local_nameserver()
 
-        logger.info('Nameserver stabilization loop starting...')
-        self._alive = True
-        self._stabilization_thread = Thread(target=self._nameserver_loop)
-        self._stabilization_thread.setDaemon(True)
-        self._stabilization_thread.start()
+        def nameserver_loop():
+            self._alive = True
+            while self._alive:
+                self.refresh_nameserver()
+                time.sleep(NS_CONTEST_INTERVAL)
+
+        logger.info('Nameserver checker loop starting...')
+        self._stabilization_thread = spawn_thread(target=nameserver_loop)
     
     def stop(self):
         '''
         Stops the nameserver wrapper and the created threads.
         '''
         self._alive = False
-        if self._stabilization_thread.join(timeout=0.5) and self._stabilization_thread.is_alive():
-            logger.error("Nameserver stabilization thread won't die after join.")
+        dead = kill_thread(self._stabilization_thread)
+        if not dead:
+            logger.error("Error killing nameserver checker thread.")
         if self.is_local:
             self._stop_local_nameserver()
 
@@ -176,5 +186,5 @@ class NameServer:
         Returns a proxy bound to the nameserver, local or remote. Should be used
         with a context manager.
         '''
-        assert self._alive, 'NameServer instance must be running before binding.'
+        assert self._alive, 'NameServer instance must be started before binding.'
         return Proxy(self._uri)
