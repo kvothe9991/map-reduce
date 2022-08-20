@@ -6,11 +6,13 @@ from typing import Any, Union
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
-from Pyro4.errors import CommunicationError, ConnectionClosedError
+from Pyro4.errors import CommunicationError
 
-from map_reduce.server.configs import DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import id, in_arc, reachable, SHA1_BIT_COUNT
+from map_reduce.server.configs import ( DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL,
+                                        DHT_NAME, DHT_RECHECK_INTERVAL )
+from map_reduce.server.utils import ( id, in_arc, reachable, SHA1_BIT_COUNT, spawn_thread,
+                                      service_address )
 
 
 logger = get_logger('dht', extras=True)
@@ -198,6 +200,19 @@ class ChordNode:
         if self.predecessor is not None and not reachable(p := self.predecessor):
             logger.info(f'Predecessor {p.host}<id={id(p):.2e}> is unreachable.')
             self.predecessor = None
+
+    def _check_ring_availability(self):
+        '''
+        Check periodically for the ring in the nameserver.
+        '''
+        with Pyro4.locateNS() as ns:
+            try:
+                ring = ns.lookup(DHT_NAME)
+                if ring != self.address and ring != self._ring:
+                    self.join(ring)
+            except Pyro4.errors.NamingError:
+                logger.info(f'No ring found in the nameserver. Announcing self.')
+                ns.register(DHT_NAME, self.address)
 
     def _handle_periodic_calls(self):
         ''' Periodically call all periodic methods. '''

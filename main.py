@@ -56,16 +56,18 @@ if __name__ == "__main__":
     # Nameserver.
     nameserver = setup_nameserver(IP, BROADCAST_PORT)
     nameserver.start()
+    
+    # Hang until nameservers stop contesting.
     sleep(5)
 
     # DHT setup.
-    with Pyro4.locateNS() as ns:
-        try:
-            ring_addr = ns.lookup(DHT_NAME)
-            dht.join(ring_addr)
-        except Pyro4.errors.NamingError:
-            logger.info(f'No DHT found. Registering {DHT_NAME} at nameserver {ns._pyroUri}.')
-            ns.register(DHT_NAME, DHT_ADDRESS)
+    # with Pyro4.locateNS() as ns:
+    #     try:
+    #         ring_addr = ns.lookup(DHT_NAME)
+    #         dht.join(ring_addr)
+    #     except Pyro4.errors.NamingError:
+    #         logger.info(f'No DHT found. Registering {DHT_NAME} at nameserver {ns._pyroUri}.')
+    #         ns.register(DHT_NAME, DHT_ADDRESS)
     
     # Start request loop.
     try:
