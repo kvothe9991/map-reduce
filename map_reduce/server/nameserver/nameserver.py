@@ -9,7 +9,7 @@ from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
 from map_reduce.server.configs import NS_CONTEST_INTERVAL
 
-from map_reduce.server.utils import alive, reachable, id
+from map_reduce.server.utils import alive, reachable, id, kill_thread, spawn_thread
 from map_reduce.server.logger import get_logger
 
 
@@ -133,30 +133,26 @@ class NameServer:
         This method is called periodically by the start() method, but can be used
         externally when sequential checks are needed instead of a parallel thread.
         '''
+        curr_ns = self._uri
+        new_ns = self._locate_nameserver()
+
         if self.is_remote:
-            if not reachable(self._uri):
-                logger.warning(f'Remote nameserver @{self._uri.host} is not reachable.')
-                if (new_uri := self._locate_nameserver()) is not None:
-                    logger.info(f'Found new nameserver @{new_uri.host}.')
-                    self._uri = new_uri
+            if not reachable(curr_ns):
+                logger.warning(f'Remote nameserver @{curr_ns.host} is not reachable.')
+                if new_ns is not None:
+                    logger.info(f'Found new nameserver @{new_ns.host}.')
+                    self._uri = new_ns
                 else:
                     logger.info(f'No new nameserver found. Announcing self.')
                     self._start_local_nameserver()
         else:
-            if (new_uri := self._locate_nameserver()) is not None and new_uri != self._uri:
-                logger.info(f'Found contesting nameserver @{new_uri.host}.')
-                if id(self._uri) >= id(new_uri):
-                    logger.info(f'I no longer am the nameserver, long live {new_uri.host}.')
-                    self._uri = new_uri
-                    self._stop_local_nameserver()
+            if new_ns is not None and new_ns != curr_ns:
+                logger.info(f'Found contesting nameserver @{new_ns.host}.')
+                if id(curr_ns) >= id(new_ns):
+                    logger.info(f'I no longer am the nameserver, long live {new_ns.host}.')
+                    self._stop_local_nameserver(forward_to=new_ns)
                 else:
                     logger.info(f'I am still the nameserver.')
-
-    def _nameserver_loop(self):
-        self._alive = True
-        while self._alive:
-            self.refresh_nameserver()
-            time.sleep(NS_CONTEST_INTERVAL)
 
     def start(self):
         '''
@@ -165,19 +161,23 @@ class NameServer:
         '''
         self._start_local_nameserver()
 
-        logger.info('Nameserver stabilization loop starting...')
-        self._alive = True
-        self._stabilization_thread = Thread(target=self._nameserver_loop)
-        self._stabilization_thread.setDaemon(True)
-        self._stabilization_thread.start()
+        def nameserver_loop():
+            self._alive = True
+            while self._alive:
+                self.refresh_nameserver()
+                time.sleep(NS_CONTEST_INTERVAL)
+
+        logger.info('Nameserver checker loop starting...')
+        self._stabilization_thread = spawn_thread(target=nameserver_loop)
     
     def stop(self):
         '''
         Stops the nameserver wrapper and the created threads.
         '''
         self._alive = False
-        if self._stabilization_thread.join(timeout=0.5) and self._stabilization_thread.is_alive():
-            logger.error("Nameserver stabilization thread won't die after join.")
+        dead = kill_thread(self._stabilization_thread)
+        if not dead:
+            logger.error("Error killing nameserver checker thread.")
         if self.is_local:
             self._stop_local_nameserver()
 
@@ -186,5 +186,5 @@ class NameServer:
         Returns a proxy bound to the nameserver, local or remote. Should be used
         with a context manager.
         '''
-        assert self._alive, 'NameServer instance must be running before binding.'
+        assert self._alive, 'NameServer instance must be started before binding.'
         return Proxy(self._uri)
