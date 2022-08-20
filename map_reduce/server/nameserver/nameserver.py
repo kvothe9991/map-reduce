@@ -83,26 +83,42 @@ class NameServer:
         logger.info(f'Local nameserver started.')
         self._uri, self._ns_daemon, self._ns_broadcast = Pyro4.naming.startNS(self._ip,
                                                                               self._port)
-        self._ns_thread = Thread(target=self._ns_daemon.requestLoop)
-        self._ns_thread.setDaemon(True)
-        self._ns_thread.start()
-
-        self._broadcast_thread = Thread(target=self._ns_broadcast.runInThread)
-        self._broadcast_thread.setDaemon(True)
-        self._broadcast_thread.start()
+        self._ns_thread = spawn_thread(target=self._ns_daemon.requestLoop)
+        self._broadcast_thread = spawn_thread(target=self._ns_broadcast.runInThread)
     
-    def _stop_local_nameserver(self):
+    def _stop_local_nameserver(self, forward_to: URI = None):
         '''
         Stops the local nameserver (killing its thread and daemons).
         '''
+        if forward_to is not None:
+            # Forward registered objects to new nameserver.
+            new_ns = forward_to
+            try:
+                with Proxy(self._uri) as sender, Proxy(new_ns) as recv:
+                    sender: Pyro4.naming.NameServer
+                    for name, addr in sender.list().items():
+                        try:
+                            recv.register(name, addr, safe=True)
+                        except Pyro4.errors.NamingError as e:
+                            logger.info(f'{e}')
+            except Exception as e:
+                logger.error(f"Error forwarding registry to nameserver {new_ns.host!r}: {e}")
+            
+            # Overwrite the binding address.
+            self._uri = new_ns
+
+        # Shutdown the nameserver.
         self._ns_daemon.shutdown()
         self._ns_daemon = None
-        if self._ns_thread.join(0.1) and self._ns_thread.is_alive():
+        dead = kill_thread(self._ns_thread)
+        if not dead:
             logger.error("Couldn't kill nameserver thread.")
         
+        # Shutdown the broadcast utility server.
         self._ns_broadcast.close()
         self._ns_broadcast = None
-        if self._broadcast_thread.join(0.1) and self._broadcast_thread.is_alive():
+        dead = kill_thread(self._broadcast_thread)
+        if not dead:
             logger.error("Couldn't kill broadcast thread.")
         
         logger.info(f'Local nameserver stopped.')

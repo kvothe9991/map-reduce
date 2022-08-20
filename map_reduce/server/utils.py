@@ -1,4 +1,5 @@
 from hashlib import sha1
+from threading import Thread
 from typing import Callable, Union
 from Pyro4 import Proxy, URI
 from Pyro4.errors import CommunicationError, ConnectionClosedError
@@ -43,3 +44,19 @@ def in_arc(x: int, l: int, r: int):
 def unpack(uri: URI):
     assert isinstance(uri, URI), 'Provided `uri` to unpack must be of type `Pyro4.URI`.'
     return uri.object, uri.host, uri.port
+
+def service_address(uri: URI) -> URI:
+    name, host, port = unpack(uri)
+    return URI(f'PYRO:{name}.service@{host}:{port}')
+
+def spawn_thread(target: Callable, args: tuple = (), kwargs: dict = {}) -> Thread:
+    ''' Spawns a thread from a target function and arguments. '''
+    thread = Thread(target=target, args=args, kwargs=kwargs)
+    thread.setDaemon(True)
+    thread.start()
+    return thread
+
+def kill_thread(thread: Thread, timeout=0.1):
+    ''' Safely stops a thread from execution, and asserts its dead status. '''
+    thread.join(timeout)
+    return not thread.is_alive()

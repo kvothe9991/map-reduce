@@ -40,21 +40,22 @@ class ChordNode:
         global logger
         logger = logging.LoggerAdapter(logger, {'IP': self._address.host,
                                                 'extra': f'self={self._id:.2e}'})
-        
-        # Partial hash table values.
-        self._items: dict[int, Any] = {}
 
         # Finger table and its stabilization.
         self._finger_table = [None] * DHT_FINGER_TABLE_SIZE
         self._current_finger_ = 0   # Self updating counter for finger table.
 
-        # Handle periodic stabilization calls.
-        self._stabilize_thread = threading.Thread(target=self._handle_periodic_calls)
-        self._stabilize_thread.setDaemon(True)
-        self._stabilize_thread.start()
+        # Ring registration on nameserver.
+        self._ring = None
+
+        # Handle periodic calls.
+        self._stabilize_thread = spawn_thread(target=self._handle_periodic_calls)
 
     def __repr__(self):
-        return f'{self.__class__.__name__}<addr={self._address}, id={self._id:.2e}>'
+        addr = self._address
+        count = len(self._items)
+        id_ = f'{self._id:.2e}'
+        return f'{self.__class__.__name__}<({count}), {addr=}, id={id_}>'
 
     def __str__(self):
         return repr(self)
