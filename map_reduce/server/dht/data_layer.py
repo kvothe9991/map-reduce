@@ -1,9 +1,14 @@
 import logging
 
+import threading
+from threading import Lock
+from typing import TypeVar
+
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
 
+from map_reduce.server.dht.locked_object import LockedObject
 from map_reduce.server.logger import get_logger
 from map_reduce.server.utils import reachable, service_address, id
 
@@ -24,7 +29,7 @@ class ChordService:
         '''
         self._address = address
         self._node_address = node_address
-        self._items = {}
+        self._items = LockedObject({})
 
         # Logging setup.
         global logger
@@ -32,7 +37,7 @@ class ChordService:
     
     def __repr__(self):
         addr = self._address
-        count = len(self._items)
+        count = len(self.items)
         return f'{self.__class__.__name__}<{addr=}, {count=}>'
     
     def __str__(self):
@@ -44,7 +49,7 @@ class ChordService:
     
     @property
     def items(self) -> dict:
-        return self._items
+        return self._items.obj
     
     @property
     def node(self) -> Proxy:
@@ -58,25 +63,26 @@ class ChordService:
         '''
         self._assert_key(key)
         self._assert_value(key, value)
-
-        key_id = self._obtain_key_id(key)
-        addr = self._find_successor(key, key_id)
-        if addr:
-            logger.debug(f'Inserting key {key!r} into {addr.host}.')
-            if addr == self._node_address:
-                if not safe or key not in self._items:
-                    self._items[key] = value
-                    logger.info(f'Inserted {key!r}:{value!r}. ({self._items=})')
-                # TODO: Replication.
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    other.insert(key, value, append, safe)
+        
+        with self._items as items:
+            key_id = self._obtain_key_id(key)
+            addr = self._find_successor(key, key_id)
+            if addr:
+                logger.debug(f'Inserting key {key!r} into {addr.host}.')
+                if addr == self._node_address:
+                    if not safe or key not in items:
+                        items[key] = value
+                    logger.info(f'Inserted {key!r}:{value!r}.')
+                    # TODO: Replication.
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        other.insert(key, value, append, safe)
+                else:
+                    logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
+                logger.error(f'Successor not found, was None.')
 
 
     def lookup(self, key, default=None):
@@ -88,20 +94,23 @@ class ChordService:
 
         key_id = self._obtain_key_id(key)
         addr = self._find_successor(key, key_id)
-        if addr:
-            if addr == self._node_address:
-                val = self._items.get(key, default)
-                logger.info(f'Found {key!r}:{val!r} in local table.')
-                return val
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    return other.lookup(key, default)
+
+        with self._items as items:
+            if addr:
+                if addr == self._node_address:
+                    value = items.get(key, default)
+                    logger.info(f'Found {key!r}:{value!r} in local table.')
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        value = other.lookup(key, default)
+                else:
+                    logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
+                logger.error(f'Successor not found, was None.')
+            
+            return value
 
     @Pyro4.oneway
     def remove(self, key):
@@ -112,26 +121,29 @@ class ChordService:
 
         key_id = self._obtain_key_id(key)
         addr = self._find_successor(key, key_id)
-        if addr is not None:
-            if addr == self._node_address:
-                if self._items.pop(key, None) is None:
-                    logger.error(f'Key {key!r} not found.')
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    return other.remove(key)
+
+        with self._items as items:
+            if addr:
+                if addr == self._node_address:
+                    if items.pop(key, None) is None:
+                        logger.error(f'Key {key!r} not found.')
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        other.remove(key)
+                else:
+                    logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
+                logger.error(f'Successor not found, was None.')
 
     @Pyro4.oneway
     def refresh(self):
         ''' Refreshes the local partial hash table. '''
         logger.info('Redistributing local partial hash table through ring.')
-        data = self._items
-        self._items.clear()
+        with self._items as items:
+            data = items
+            items.clear()
         for k,v in data.items():
             self.insert(k, v, safe=True)
 
@@ -165,4 +177,4 @@ class ChordService:
     # Debug methods.
     def debug_dump_items(self):
         ''' Prints the local partial hash table. '''
-        print(self._items)
+        print(self.items)
