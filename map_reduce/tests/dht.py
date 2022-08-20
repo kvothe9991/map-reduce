@@ -1,3 +1,4 @@
+from time import sleep
 import Pyro4
 import Pyro4.errors
 import logging
@@ -30,6 +31,8 @@ with Proxy(service_address(dht_uri)) as dht:
         for k,v in data.items():
             logger.info(f'Inserting {k!r}:{v!r}.')
             dht.insert(k,v)
+
+            sleep(1)
             
             logger.info(f'Looking up {k!r}.')
             rv = dht.lookup(k)
@@ -38,7 +41,7 @@ with Proxy(service_address(dht_uri)) as dht:
             else:
                 logger.error(f'Result {rv!r} was different from original value {v!r}!')
             
-            logger.info(f'Removing {k!r}.')
-            dht.remove(k)
+            # logger.info(f'Removing {k!r}.')
+            # dht.remove(k)
     except Pyro4.errors.TimeoutError as e:
         logger.error(str(e))

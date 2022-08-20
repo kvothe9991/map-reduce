@@ -5,7 +5,7 @@ CONTAINER_NAME="map-reduce.tester"
 
 # Run the container.
 docker run -itd --rm --network=distributed --ip=172.18.0.254 --name=$CONTAINER_NAME \
-       map-reduce:server python -m unittest "map_reduce.tests.$TEST"
+       map-reduce:server python -m unittest -v "map_reduce.tests.$TEST"
 
 # Tail the logs.
 docker logs -f --tail=15 $CONTAINER_NAME
