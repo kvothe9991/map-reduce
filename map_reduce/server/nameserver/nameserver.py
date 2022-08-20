@@ -54,12 +54,6 @@ class NameServer:
     def __repr__(self):
         return str(self)
     
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, *_):
-        self.stop()
-    
     @property
     def is_remote(self) -> bool:
         return self._ip != self._uri.host

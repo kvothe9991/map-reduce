@@ -39,47 +39,6 @@ def setup_nameserver(ip: str, port: int):
     ''' Setup the nameserver wrapper. '''
     return NameServer(ip, port)
 
-def handle_requests(main_daemon: Pyro4.Daemon, ns: NameServer):
-    '''
-    Forward requests for the nameserver, its broadcast server, and our custom Daemon.
-    Implicitly lets nameserver bindings autorefresh, and waits a certain time to cache
-    requests.
-    '''
-    ns_daemon, ns_broadcast = ns.servers
-
-    # Join all sockets for request processing.
-    sockets = main_daemon.sockets
-    if ns.is_local:
-        sockets.extend(ns_daemon.sockets)
-        sockets.append(ns_broadcast)
-
-    # Wait for a request.
-    rqs, *_ = select.select(sockets, [], [], REQUESTS_WAIT_TIME)
-
-    # Forward requested sockets to the owner daemon.
-    events_for_ns = []
-    events_for_main = []
-    for rq in rqs:
-        if rq is ns_broadcast:
-            ns_broadcast.processRequest()
-        elif rq in ns_daemon.sockets:
-            events_for_ns.append(rq)
-        elif rq in main_daemon.sockets:
-            events_for_main.append(rq)
-    
-    # Process requests.
-    if events_for_ns:
-        ns_daemon.events(events_for_ns)
-    if events_for_main:
-        main_daemon.events(events_for_main) 
-
-def request_loop(main_daemon: Pyro4.Daemon, ns: NameServer):
-    '''
-    High level loop that multiplexes requests to the nameserver and the main daemon.
-    '''
-    while True:
-        ns.refresh_nameserver()
-        handle_requests(main_daemon, ns)
 
 if __name__ == "__main__":
 

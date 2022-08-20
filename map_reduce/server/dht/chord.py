@@ -206,23 +206,18 @@ class ChordNode:
                 self._check_predecessor()
                 self._stabilize()
                 self._fix_fingers()
+                self._check_ring_availability()
                 time.sleep(DHT_STABILIZATION_INTERVAL)
-            except (ConnectionClosedError, ConnectionError) as e:
-                logger.error(str(e))
-            except Pyro4.errors.TimeoutError as e:
+            except CommunicationError as e:
                 logger.error(str(e))
             except Exception as e:
-                logger.error(f'Other error: {str(e)}.')
+                logger.error(f'{e.__class__.__name__}: {e}.')
 
 
     # Helper / debugging methods:
-    def debug_dump_finger_table(self):
-        ''' Debugging method to dump the finger table. '''
-        logger.debug(f'finger table: {self._finger_table}')
-
-    def debug_dump_successors(self):
+    def debug_dump_successors(self) -> list:
         ''' Debugging method to dump the successors. '''
-        logger.debug(f'successors: {self._successor}')
+        logger.debug(f'successors: {[self._successor]}')
     
     def debug_get_ring_topology(self) -> tuple[list, bool]:
         ''' Debugging method to get all reachable nodes of the CHORD ring. Returns
