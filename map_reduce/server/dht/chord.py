@@ -28,10 +28,6 @@ class ChordNode:
         The `successor_cache_size` argument defines the amount of successors accounted
         for to mantain robustness of CHORD's stability in case of several contigous
         nodes failing simultaneously.
-
-        TODO:
-            . Register periodic methods on another Daemon serving.
-            | Setup stops on periodic methods while the main API is being processed.
         '''
         self._address = address # Pyro4 URI of this node.
         self._id = id(address)  # Numerical identifier of this node.
@@ -114,6 +110,7 @@ class ChordNode:
                 name = 'successor'
             logger.info(f'Predecessor set to {name}.')
 
+
     # Exposed RPCs:
     def find_successor(self, x: int) -> URI:
         ''' Return immediate successor of id `x`, in address form. '''
@@ -150,8 +147,11 @@ class ChordNode:
         if reachable(addr):
             with Proxy(addr) as n:
                 logger.info(f'Joined a DHT ring containing {addr}.')
+                self._ring = addr
                 self.predecessor = None
                 self.successor = n.find_successor(self.id)
+                with Proxy(service_address(self._address)) as service:
+                    service.refresh()
         else:
             logger.error(f'Could not join the ring, node {addr}<id={id(addr):.2e}> unreachable.')
 
@@ -162,6 +162,7 @@ class ChordNode:
         or not reachable(self.predecessor)
         or in_arc(id(n), l=id(self.predecessor), r=self.id)):
             self.predecessor = n
+    
 
     # Periodic methods:
     def _stabilize(self):
@@ -241,8 +242,20 @@ class ChordNode:
         whether the ring was completely reachable. '''
         ring = [self.address]
         curr = self.successor
-        while curr and curr != self.address and reachable(curr):
+        while curr is not None and curr != self.address:
             ring.append(curr)
+            if not reachable(curr):
+                break
             with Proxy(curr) as n:
                 curr = n.successor
         return ring, (curr == self.address)
+
+    def debug_to_list(self, partial: list = []) -> list:
+        ''' Return a list of the DHT members. '''
+        if self.successor in partial:
+            if self.successor != partial[0]:
+                L = partial + [self._address, self.successor]
+                logger.warning(f'Non-circular, but cyclical ring found: {L}')
+            return partial
+        with Proxy(self.successor) as s:
+            return s.debug_to_list(partial + [self._address])
