@@ -48,5 +48,9 @@ LOGGING = {
     'test': {
         'color': '\x1b[1;31m',  # Red.
         'level': logging.DEBUG,
+    },
+    'lock': {
+        'color': '\x1b[1;31m',  # Red.
+        'level': logging.DEBUG,
     }
 }

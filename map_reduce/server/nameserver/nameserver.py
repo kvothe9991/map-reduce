@@ -110,16 +110,12 @@ class NameServer:
         # Shutdown the nameserver.
         self._ns_daemon.shutdown()
         self._ns_daemon = None
-        dead = kill_thread(self._ns_thread)
-        if not dead:
-            logger.error("Couldn't kill nameserver thread.")
+        kill_thread(self._ns_thread, logger)
         
         # Shutdown the broadcast utility server.
         self._ns_broadcast.close()
         self._ns_broadcast = None
-        dead = kill_thread(self._broadcast_thread)
-        if not dead:
-            logger.error("Couldn't kill broadcast thread.")
+        kill_thread(self._broadcast_thread, logger)
         
         logger.info(f'Local nameserver stopped.')
     
@@ -175,9 +171,7 @@ class NameServer:
         Stops the nameserver wrapper and the created threads.
         '''
         self._alive = False
-        dead = kill_thread(self._stabilization_thread)
-        if not dead:
-            logger.error("Error killing nameserver checker thread.")
+        kill_thread(self._stabilization_thread, logger)
         if self.is_local:
             self._stop_local_nameserver()
 

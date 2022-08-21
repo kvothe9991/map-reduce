@@ -1,8 +1,9 @@
+import logging
 from hashlib import sha1
 from threading import Thread
-from typing import Callable, Union
+from typing import Callable
 from Pyro4 import Proxy, URI
-from Pyro4.errors import CommunicationError, ConnectionClosedError
+from Pyro4.errors import CommunicationError
 
 SHA1_BIT_COUNT = 160
 
@@ -56,7 +57,8 @@ def spawn_thread(target: Callable, args: tuple = (), kwargs: dict = {}) -> Threa
     thread.start()
     return thread
 
-def kill_thread(thread: Thread, timeout=0.1):
+def kill_thread(thread: Thread, logger: logging.Logger, timeout=0.1):
     ''' Safely stops a thread from execution, and asserts its dead status. '''
     thread.join(timeout)
-    return not thread.is_alive()
+    if thread.is_alive():
+        logger.error(f'Error killing thread.')
