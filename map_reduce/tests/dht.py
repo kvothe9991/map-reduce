@@ -32,7 +32,7 @@ with Proxy(service_address(dht_uri)) as dht:
             logger.info(f'Inserting {k!r}:{v!r}.')
             dht.insert(k,v)
 
-            sleep(1)
+            # sleep(1)
             
             logger.info(f'Looking up {k!r}.')
             rv = dht.lookup(k)
