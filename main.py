@@ -8,7 +8,7 @@ import Pyro4
 import Pyro4.errors
 import Pyro4.naming
 import Pyro4.socketutil
-from Pyro4 import Proxy, URI
+from Pyro4 import Proxy, URI, Daemon
 
 Pyro4.config.SERVERTYPE = 'thread'
 # Pyro4.config.SERVERTYPE = 'multiplex'
@@ -19,8 +19,6 @@ from map_reduce.server.dht import ChordNode, ChordService, service_address
 from map_reduce.server.logger import get_logger
 from map_reduce.server.nameserver import NameServer
 
-HOST = socket.gethostname()
-IP = Pyro4.socketutil.getIpAddress(None, workaround127=None)
 DHT_ADDRESS = URI(f'PYRO:{DHT_NAME}@{IP}:{DAEMON_PORT}')
 DHT_SERVICE_ADDRESS = service_address(DHT_ADDRESS)
 
@@ -28,14 +26,14 @@ DHT_SERVICE_ADDRESS = service_address(DHT_ADDRESS)
 logger = get_logger('main')
 logger = logging.LoggerAdapter(logger, {'IP': IP})
 
-def setup_daemon(ip: str, port: int, objects: dict):
+def setup_daemon(ip: str, port: int, objects: dict) -> Daemon:
     ''' Setup main daemon. '''
     daemon = Pyro4.Daemon(host=ip, port=port)
     for name, obj in objects.items():
         daemon.register(obj, name)
     return daemon
 
-def setup_nameserver(ip: str, port: int):
+def setup_nameserver(ip: str, port: int) -> NameServer:
     ''' Setup the nameserver wrapper. '''
     return NameServer(ip, port)
 
@@ -59,15 +57,6 @@ if __name__ == "__main__":
     
     # Hang until nameservers stop contesting.
     sleep(5)
-
-    # DHT setup.
-    # with Pyro4.locateNS() as ns:
-    #     try:
-    #         ring_addr = ns.lookup(DHT_NAME)
-    #         dht.join(ring_addr)
-    #     except Pyro4.errors.NamingError:
-    #         logger.info(f'No DHT found. Registering {DHT_NAME} at nameserver {ns._pyroUri}.')
-    #         ns.register(DHT_NAME, DHT_ADDRESS)
     
     # Start request loop.
     try:
