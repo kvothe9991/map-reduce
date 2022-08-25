@@ -4,8 +4,10 @@ import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
 
+from map_reduce.server.dht.locked_object import LockedObject
 from map_reduce.server.logger import get_logger
 from map_reduce.server.utils import reachable, service_address, id
+from map_reduce.server.configs import DHT_REPLICATION_SIZE
 
 
 logger = get_logger('dht:s')
@@ -20,19 +22,20 @@ class ChordService:
         the `address` attribute contains the actual accessor to this class, with an
         appended 'service' on the name object.
 
-        TODO: Mutual exclusion on self._items requests.
+        TODO: Replication of objects.
         '''
         self._address = address
         self._node_address = node_address
-        self._items = {}
+        self._items = LockedObject({})
+        self._replicated_items = LockedObject([{} for _ in range(DHT_REPLICATION_SIZE)])
 
         # Logging setup.
         global logger
         logger = logging.LoggerAdapter(logger, {'IP': address.host})
     
     def __repr__(self):
-        addr = self._address
-        count = len(self._items)
+        addr = self._address.asString()
+        count = len(self.items)
         return f'{self.__class__.__name__}<{addr=}, {count=}>'
     
     def __str__(self):
@@ -44,11 +47,16 @@ class ChordService:
     
     @property
     def items(self) -> dict:
-        return self._items
+        return self._items.obj
+    
+    @property
+    def replicated_items(self) -> list[dict]:
+        return self._replicated_items.obj
     
     @property
     def node(self) -> Proxy:
         return Proxy(self._node_address)
+
 
     # Exposed RPCs.
     @Pyro4.oneway
@@ -58,26 +66,26 @@ class ChordService:
         '''
         self._assert_key(key)
         self._assert_value(key, value)
-
-        key_id = self._obtain_key_id(key)
-        addr = self._find_successor(key, key_id)
-        if addr:
-            logger.debug(f'Inserting key {key!r} into {addr.host}.')
-            if addr == self._node_address:
-                if not safe or key not in self._items:
-                    self._items[key] = value
-                    logger.info(f'Inserted {key!r}:{value!r}. ({self._items=})')
-                # TODO: Replication.
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    other.insert(key, value, append, safe)
+        
+        with self._items as items:
+            key_id = self._obtain_key_id(key)
+            addr = self._find_successor(key, key_id)
+            if addr:
+                logger.debug(f'Inserting key {key!r} into {addr.host}.')
+                if addr == self._node_address:
+                    if not safe or key not in items:
+                        items[key] = value
+                    logger.info(f'Inserted {key!r}:{value!r}.')
+                    # TODO: Replication.
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        other.insert(key, value, append, safe)
+                else:
+                    logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
-
+                logger.error(f'Successor not found, was None.')
 
     def lookup(self, key, default=None):
         '''
@@ -88,20 +96,25 @@ class ChordService:
 
         key_id = self._obtain_key_id(key)
         addr = self._find_successor(key, key_id)
-        if addr:
-            if addr == self._node_address:
-                val = self._items.get(key, default)
-                logger.info(f'Found {key!r}:{val!r} in local table.')
-                return val
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    return other.lookup(key, default)
+
+        with self._items as items:
+            if addr:
+                if addr == self._node_address:
+                    if (value := items.get(key, default)) is not None:
+                        logger.info(f'Found {key!r}:{value!r} in local table.')
+                    else:
+                        logger.info(f'Could not find {key!r} in local table.')
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        value = other.lookup(key, default)
+                else:
+                    logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
+                logger.error(f'Successor not found, was None.')
+            
+            return value
 
     @Pyro4.oneway
     def remove(self, key):
@@ -112,28 +125,45 @@ class ChordService:
 
         key_id = self._obtain_key_id(key)
         addr = self._find_successor(key, key_id)
-        if addr is not None:
-            if addr == self._node_address:
-                if self._items.pop(key, None) is None:
-                    logger.error(f'Key {key!r} not found.')
-            elif reachable(addr):
-                serv_addr = service_address(addr)
-                logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
-                with Proxy(serv_addr) as other:
-                    return other.remove(key)
+
+        with self._items as items:
+            if addr:
+                if addr == self._node_address:
+                    if items.pop(key, None) is None:
+                        logger.error(f'Key {key!r} not found.')
+                elif reachable(addr):
+                    serv_addr = service_address(addr)
+                    logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
+                    with Proxy(serv_addr) as other:
+                        other.remove(key)
+                else:
+                    logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
             else:
-                logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
-        else:
-            logger.error(f'Successor not found, was None.')
+                logger.error(f'Successor not found, was None.')
 
     @Pyro4.oneway
     def refresh(self):
         ''' Refreshes the local partial hash table. '''
         logger.info('Redistributing local partial hash table through ring.')
-        data = self._items
-        self._items.clear()
+        with self._items as items:
+            data = items
+            items.clear()
         for k,v in data.items():
             self.insert(k, v, safe=True)
+    
+    @Pyro4.oneway
+    def refresh_replication(self):
+        ''' Refresh replication data from the successors' hash table. '''
+        # TODO: Safe iteration for when there's less successors than expected.
+        with Proxy(self._node_address) as node:
+            successors = node.successors
+        with self._replicated_items as repl_successors:
+            for i, repl in enumerate(repl_successors):
+                repl.clear()
+                with Proxy(successors[i]) as succ:
+                    for k,v in succ.items:
+                        repl[k] = v
+
 
     # Helper methods.
     def _assert_key(self, key):
@@ -162,7 +192,8 @@ class ChordService:
         except Pyro4.errors.CommunicationError as e:
             logger.error(f"Error accessing own node: '{type(e).__name__}: {e}'")
 
+
     # Debug methods.
     def debug_dump_items(self):
         ''' Prints the local partial hash table. '''
-        print(self._items)
+        print(self.items)

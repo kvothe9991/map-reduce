@@ -1,8 +1,10 @@
 #!/bin/bash
-CONTAINER_NAME="map-reduce_$(date +%H%M%S_%N)"
+IP="172.18.0.$1"
+CONTAINER_NAME="map-reduce_$IP"
+# ..._$(date +%H%M%S_%N)
 
 # docker build ./ -t map-reduce:server
-docker run -itd --network=distributed --ip=172.18.0.$1 --name=$CONTAINER_NAME \
+docker run -itd --rm --network=distributed --ip=$IP --name=$CONTAINER_NAME \
        map-reduce:server python main.py
 # docker cp . $CONTAINER_NAME:/app/
 # docker exec -it $CONTAINER_NAME python main.py

@@ -1,8 +1,13 @@
+import logging
 from hashlib import sha1
 from threading import Thread
-from typing import Callable, Union
+from typing import Callable
+
+import Pyro4
+import Pyro4.errors
 from Pyro4 import Proxy, URI
-from Pyro4.errors import CommunicationError, ConnectionClosedError
+
+from map_reduce.server.configs import IP, DAEMON_PORT
 
 SHA1_BIT_COUNT = 160
 
@@ -14,7 +19,7 @@ def alive(proxy: Proxy) -> bool:
     try:
         proxy._pyroBind()
         return True
-    except CommunicationError as e:
+    except Pyro4.errors.CommunicationError as e:
         return False
 
 def reachable(addr: URI) -> bool:
@@ -25,7 +30,7 @@ def reachable(addr: URI) -> bool:
         with Proxy(addr) as proxy:
             proxy._pyroBind()
         return True
-    except Exception as e:
+    except Pyro4.errors.CommunicationError as e:
         return False
 
 def id(key: URI, hash: Callable = sha1) -> int:
@@ -45,6 +50,10 @@ def unpack(uri: URI):
     assert isinstance(uri, URI), 'Provided `uri` to unpack must be of type `Pyro4.URI`.'
     return uri.object, uri.host, uri.port
 
+def daemon_address(name: str, ip: str = IP, port: int = DAEMON_PORT) -> URI:
+    ''' Returns the URI of the daemon. '''
+    return URI(f'PYRO:{name}@{ip}:{port}')
+
 def service_address(uri: URI) -> URI:
     name, host, port = unpack(uri)
     return URI(f'PYRO:{name}.service@{host}:{port}')
@@ -56,7 +65,8 @@ def spawn_thread(target: Callable, args: tuple = (), kwargs: dict = {}) -> Threa
     thread.start()
     return thread
 
-def kill_thread(thread: Thread, timeout=0.1):
+def kill_thread(thread: Thread, logger: logging.Logger = None, timeout=0.1):
     ''' Safely stops a thread from execution, and asserts its dead status. '''
     thread.join(timeout)
-    return not thread.is_alive()
+    if thread.is_alive() and logger is not None:
+        logger.error(f'Error killing thread.')
