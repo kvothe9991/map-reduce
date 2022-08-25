@@ -53,6 +53,7 @@ if __name__ == "__main__":
 
     # Nameserver.
     nameserver = setup_nameserver(IP, BROADCAST_PORT)
+    # nameserver.delegate('master', master.start, master.stop)
     nameserver.start()
     
     # Hang until nameservers stop contesting.

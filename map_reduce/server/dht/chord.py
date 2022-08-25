@@ -12,7 +12,7 @@ from Pyro4.errors import CommunicationError
 
 from map_reduce.server.logger import get_logger
 from map_reduce.server.configs import ( DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL,
-                                        DHT_NAME, DHT_RECHECK_INTERVAL )
+                                        DHT_NAME )
 from map_reduce.server.utils import ( id, in_arc, reachable, SHA1_BIT_COUNT, spawn_thread,
                                       service_address )
 
