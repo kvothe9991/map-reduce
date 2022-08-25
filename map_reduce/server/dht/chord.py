@@ -4,8 +4,10 @@ import threading
 from typing import Any, Union
 
 import Pyro4
-import Pyro4.errors
 from Pyro4 import URI, Proxy
+Pyro4.config.COMMTIMEOUT = 3
+
+import Pyro4.errors
 from Pyro4.errors import CommunicationError
 
 from map_reduce.server.logger import get_logger
@@ -50,10 +52,9 @@ class ChordNode:
         self._stabilize_thread = spawn_thread(target=self._handle_periodic_calls)
 
     def __repr__(self):
-        addr = self._address
-        count = len(self._items)
+        addr = self._address.asString()
         id_ = f'{self._id:.2e}'
-        return f'{self.__class__.__name__}<({count}), {addr=}, id={id_}>'
+        return f'{self.__class__.__name__}<({addr=}, id={id_}>'
 
     def __str__(self):
         return repr(self)
@@ -203,9 +204,7 @@ class ChordNode:
             self.predecessor = None
 
     def _check_ring_availability(self):
-        '''
-        Check periodically for the ring in the nameserver.
-        '''
+        ''' Check periodically for the ring in the nameserver. '''
         with Pyro4.locateNS() as ns:
             try:
                 ring = ns.lookup(DHT_NAME)

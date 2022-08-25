@@ -1,9 +1,5 @@
 import logging
 
-import threading
-from threading import Lock
-from typing import TypeVar
-
 import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
@@ -11,6 +7,7 @@ from Pyro4 import URI, Proxy
 from map_reduce.server.dht.locked_object import LockedObject
 from map_reduce.server.logger import get_logger
 from map_reduce.server.utils import reachable, service_address, id
+from map_reduce.server.configs import DHT_REPLICATION_SIZE
 
 
 logger = get_logger('dht:s')
@@ -25,18 +22,19 @@ class ChordService:
         the `address` attribute contains the actual accessor to this class, with an
         appended 'service' on the name object.
 
-        TODO: Mutual exclusion on self._items requests.
+        TODO: Replication of objects.
         '''
         self._address = address
         self._node_address = node_address
         self._items = LockedObject({})
+        self._replicated_items = LockedObject([{} for _ in range(DHT_REPLICATION_SIZE)])
 
         # Logging setup.
         global logger
         logger = logging.LoggerAdapter(logger, {'IP': address.host})
     
     def __repr__(self):
-        addr = self._address
+        addr = self._address.asString()
         count = len(self.items)
         return f'{self.__class__.__name__}<{addr=}, {count=}>'
     
@@ -52,8 +50,13 @@ class ChordService:
         return self._items.obj
     
     @property
+    def replicated_items(self) -> list[dict]:
+        return self._replicated_items.obj
+    
+    @property
     def node(self) -> Proxy:
         return Proxy(self._node_address)
+
 
     # Exposed RPCs.
     @Pyro4.oneway
@@ -84,7 +87,6 @@ class ChordService:
             else:
                 logger.error(f'Successor not found, was None.')
 
-
     def lookup(self, key, default=None):
         '''
         Searches the partial hash table for a key. Exception-safe as it returns
@@ -98,8 +100,10 @@ class ChordService:
         with self._items as items:
             if addr:
                 if addr == self._node_address:
-                    value = items.get(key, default)
-                    logger.info(f'Found {key!r}:{value!r} in local table.')
+                    if (value := items.get(key, default)) is not None:
+                        logger.info(f'Found {key!r}:{value!r} in local table.')
+                    else:
+                        logger.info(f'Could not find {key!r} in local table.')
                 elif reachable(addr):
                     serv_addr = service_address(addr)
                     logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
@@ -146,6 +150,20 @@ class ChordService:
             items.clear()
         for k,v in data.items():
             self.insert(k, v, safe=True)
+    
+    @Pyro4.oneway
+    def refresh_replication(self):
+        ''' Refresh replication data from the successors' hash table. '''
+        # TODO: Safe iteration for when there's less successors than expected.
+        with Proxy(self._node_address) as node:
+            successors = node.successors
+        with self._replicated_items as repl_successors:
+            for i, repl in enumerate(repl_successors):
+                repl.clear()
+                with Proxy(successors[i]) as succ:
+                    for k,v in succ.items:
+                        repl[k] = v
+
 
     # Helper methods.
     def _assert_key(self, key):
@@ -173,6 +191,7 @@ class ChordService:
                 return owner
         except Pyro4.errors.CommunicationError as e:
             logger.error(f"Error accessing own node: '{type(e).__name__}: {e}'")
+
 
     # Debug methods.
     def debug_dump_items(self):

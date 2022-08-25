@@ -2,7 +2,7 @@ from threading import Lock
 from typing import Generic, TypeVar
 
 from map_reduce.server.logger import get_logger
-logger = get_logger('lock')
+logger = get_logger('lock', adapter={'IP': ''})
 
 
 T = TypeVar('T')
