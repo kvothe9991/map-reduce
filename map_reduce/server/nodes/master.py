@@ -125,10 +125,12 @@ class Master(ThreaderNode):
         return False
 
     # valida un split local
+    # creo que no hace falta
     def validate_split(self, split):
         pass
 
     # revisa si existe el split local
+    # creo que no hace falta
     def contains_split(self, split):
         pass
 
