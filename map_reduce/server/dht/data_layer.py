@@ -6,7 +6,7 @@ from Pyro4 import URI, Proxy
 
 from map_reduce.server.dht.locked_object import LockedObject
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import reachable, service_address, id
+from map_reduce.server.utils import reachable, service_address, id, split
 from map_reduce.server.configs import DHT_REPLICATION_SIZE
 
 
@@ -75,15 +75,15 @@ class ChordService:
                 if addr == self._node_address:
                     if not safe or key not in items:
                         items[key] = value
-                    logger.info(f'Inserted {key!r}:{value!r}.')
+                    logger.debug(f'Inserted {key!r}:{value!r}.')
                     # TODO: Replication.
                 elif reachable(addr):
                     serv_addr = service_address(addr)
-                    logger.info(f'Insertion of {key!r} redirected to {serv_addr}.')
+                    logger.debug(f'Insertion of {key!r} redirected to {serv_addr}.')
                     with Proxy(serv_addr) as other:
                         other.insert(key, value, append, safe)
                 else:
-                    logger.info(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
+                    logger.error(f'Tried to store {key!r}:{value!r} in node {addr.host} but it was unreachable.')
             else:
                 logger.error(f'Successor not found, was None.')
 
@@ -101,16 +101,16 @@ class ChordService:
             if addr:
                 if addr == self._node_address:
                     if (value := items.get(key, default)) is not None:
-                        logger.info(f'Found {key!r}:{value!r} in local table.')
+                        logger.debug(f'Found {key!r}:{value!r} in local table.')
                     else:
-                        logger.info(f'Could not find {key!r} in local table.')
+                        logger.debug(f'Could not find {key!r} in local table.')
                 elif reachable(addr):
                     serv_addr = service_address(addr)
-                    logger.info(f'Lookup of {key!r} redirected to {serv_addr}.')
+                    logger.debug(f'Lookup of {key!r} redirected to {serv_addr}.')
                     with Proxy(serv_addr) as other:
                         value = other.lookup(key, default)
                 else:
-                    logger.info(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
+                    logger.error(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
             else:
                 logger.error(f'Successor not found, was None.')
             
@@ -133,11 +133,11 @@ class ChordService:
                         logger.error(f'Key {key!r} not found.')
                 elif reachable(addr):
                     serv_addr = service_address(addr)
-                    logger.info(f'Removal of {key!r} redirected to {serv_addr}.')
+                    logger.debug(f'Removal of {key!r} redirected to {serv_addr}.')
                     with Proxy(serv_addr) as other:
                         other.remove(key)
                 else:
-                    logger.info(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
+                    logger.error(f'Tried to remove {key!r} from node {addr.host} but it was unreachable.')
             else:
                 logger.error(f'Successor not found, was None.')
 
@@ -151,6 +151,20 @@ class ChordService:
         for k,v in data.items():
             self.insert(k, v, safe=True)
     
+    ## Replication RPCs.
+    @Pyro4.oneway
+    def claim_replicated_items(self, n: int):
+        '''
+        Claims the replicated items from first `n` successors as its own items.
+        '''
+        with (self._items as items, self._replicated_items as replications):
+            claimed, remainder = split(replications, at=n)
+            for repl in claimed:
+                items.update(repl)
+                logger.debug(f'Claimed successor items: {repl}.')
+            self._replicated_items.obj = remainder + [{}] * n
+        logger.info(f'Claimed {n} replicated successors.')
+
     @Pyro4.oneway
     def refresh_replication(self):
         ''' Refresh replication data from the successors' hash table. '''
@@ -158,12 +172,11 @@ class ChordService:
         with Proxy(self._node_address) as node:
             successors = node.successors
         with self._replicated_items as repl_successors:
-            for i, repl in enumerate(repl_successors):
-                repl.clear()
-                with Proxy(successors[i]) as succ:
-                    for k,v in succ.items:
-                        repl[k] = v
-
+            for i,repl in enumerate(repl_successors):
+                if successors[i] is not None:
+                    with Proxy(service_address(successors[i])) as succ:
+                        repl.clear()
+                        repl.update(succ.items)
 
     # Helper methods.
     def _assert_key(self, key):
@@ -179,7 +192,7 @@ class ChordService:
     def _obtain_key_id(self, key):
         ''' Obtains the SHA-1 hash id for a given key. '''
         key_id = id(key)
-        logger.info(f'Hashed key {key!r} as {key_id}.')
+        logger.debug(f'Hashed key {key!r} as {key_id}.')
         return key_id
 
     def _find_successor(self, key, key_id):
@@ -187,13 +200,23 @@ class ChordService:
         try:
             with Proxy(self._node_address) as node:
                 owner = node.find_successor(key_id)
-                logger.info(f'Owner of {key!r} is {owner.host}.')
+                logger.debug(f'Owner of {key!r} is {owner.host}.')
                 return owner
         except Pyro4.errors.CommunicationError as e:
             logger.error(f"Error accessing own node: '{type(e).__name__}: {e}'")
 
 
     # Debug methods.
-    def debug_dump_items(self):
+    def debug_dump_items(self, no_print=False):
         ''' Prints the local partial hash table. '''
-        print(self.items)
+        with self._items as items:
+            if not no_print:
+                print(items)
+            return items
+    
+    def debug_dump_replicated_items(self, no_print=False):
+        ''' Prints the replicated items from successors' hash tables. '''
+        with self._replicated_items as repl_items:
+            if not no_print:
+                print(repl_items)
+            return repl_items

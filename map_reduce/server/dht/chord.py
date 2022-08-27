@@ -1,7 +1,8 @@
+from re import L
 import time
 import logging
 import threading
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import Pyro4
 from Pyro4 import URI, Proxy
@@ -10,14 +11,13 @@ Pyro4.config.COMMTIMEOUT = 3
 import Pyro4.errors
 from Pyro4.errors import CommunicationError
 
-from map_reduce.server.logger import get_logger
 from map_reduce.server.configs import ( DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL,
-                                        DHT_NAME, DHT_RECHECK_INTERVAL )
+                                        DHT_NAME, DHT_REPLICATION_SIZE )
 from map_reduce.server.utils import ( id, in_arc, reachable, SHA1_BIT_COUNT, spawn_thread,
                                       service_address )
-
-
+from map_reduce.server.logger import get_logger
 logger = get_logger('dht', extras=True)
+
 
 @Pyro4.expose
 @Pyro4.behavior('single')
@@ -31,12 +31,13 @@ class ChordNode:
         for to mantain robustness of CHORD's stability in case of several contigous
         nodes failing simultaneously.
         '''
-        self._address = address # Pyro4 URI of this node.
-        self._id = id(address)  # Numerical identifier of this node.
-        self._predecessor = None        # Pyro4 URI of this node's predecessor.
-        self._successor = self._address # Pyro4 URI of this node's successors.
-        
-        # Logging setup:
+        # Known addresses.
+        self._address = address
+        self._id = id(address)
+        self._predecessor = None
+        self._successors = [ None for _ in range(DHT_REPLICATION_SIZE) ]
+
+        # Logging setup.
         global logger
         logger = logging.LoggerAdapter(logger, {'IP': self._address.host,
                                                 'extra': f'self={self._id:.2e}'})
@@ -76,13 +77,14 @@ class ChordNode:
         return self._address
 
     @property
-    def successor(self, k=0) -> URI:
-        return self._successor
+    def immediate_successor(self) -> URI:
+        return self._successors[0]
     
-    @successor.setter
-    def successor(self, n: URI):
+    @immediate_successor.setter
+    def immediate_successor(self, n: URI):
         ''' Setter for the successor attribute. '''
-        self._successor = n
+        # assert not any(self._successors), f'Set immediate succesor to {n} where successor list is non-empty.'
+        self._successors[0] = n
 
         # Logging.
         if n is not None:
@@ -91,7 +93,11 @@ class ChordNode:
                 name = 'self'
             elif self.address == self.predecessor:
                 name = 'predecessor'
-            logger.info(f'Successor set to {name}.')
+            logger.debug(f'Immediate successor set to {name}.')
+
+    @property
+    def successors(self) -> list[URI]:
+        return self._successors
 
     @property
     def predecessor(self) -> URI:
@@ -107,41 +113,59 @@ class ChordNode:
             name = f'{n.host}[id={id(n):.1e}]'
             if self.address == n:
                 name = 'self'
-            elif self.address == self.successor:
+            elif self.address == self.immediate_successor:
                 name = 'successor'
-            logger.info(f'Predecessor set to {name}.')
+            logger.debug(f'Predecessor set to {name}.')
 
 
-    # Exposed RPCs:
+    # Exposed RPCs.
     def find_successor(self, x: int) -> URI:
-        ''' Return immediate successor of id `x`, in address form. '''
-        
+        '''
+        Return immediate successor of id `x`, in address form.
+        '''
+        assert isinstance(x, int), 'find_successor must receive an id (int), not an object.'
         # Trivial cases for the ring being one-node long.
-        if self.successor is None or self.successor == self.address:
+        if self.immediate_successor is None or self.immediate_successor == self.address:
             return self.address
         
         # Search if `x` belongs to this node's domain, otherwise check the finger table.
-        if in_arc(x, l=self.id, r=id(self.successor)):
-            return self.successor
-        elif (cp_addr :=  self.closest_preceding_node(x)) == self.address:
+        if in_arc(x, l=self.id, r=id(self.immediate_successor)):
+            return self.immediate_successor
+        elif (cp_addr := self.closest_preceding_node(x)) == self.address:
             return self.address
         else:
-            # closest_preceding_node() guarantees that the returned node is alive.
             with Proxy(cp_addr) as n:
                 return n.find_successor(x)
 
     def closest_preceding_node(self, x: int) -> URI:
-        ''' Search the local finger table for the closest predecessor of id `x`,
+        '''
+        Search the local finger table for the closest predecessor of id `x`,
         running the table in reverse order for convenient convergence to the furthest
         node from self available, which is returned in address form.
         
-        For convenience, the closest preceding *alive* node is returned.'''
-        
-        # Iterate finger table in reverse order, skipping the last one.
+        For convenience, the closest preceding *alive* node is returned.
+        '''
+        choices = []
+
+        # Iterate finger table in reverse order.
         for f_addr in reversed(self._finger_table):
             if f_addr and in_arc(id(f_addr), l=self.id, r=x) and reachable(f_addr):
-                return f_addr
-        return self.address
+                choices.append(f_addr)
+                break
+        
+        # Iterate successor list in reverse order.
+        for s_addr in reversed(self._successors):
+            if s_addr and in_arc(id(s_addr), l=self.id, r=x) and reachable(s_addr):
+                choices.append(s_addr)
+                break
+        
+        if len(choices) == 2:
+            n,m = choices
+            return m if in_arc(id(n), l=self.id, r=id(m)) else n
+        elif len(choices) == 1:
+            return choices[0]
+        else:
+            return self.address
 
     def join(self, addr: URI):
         ''' Join a CHORD ring containing node `n`. '''
@@ -150,9 +174,11 @@ class ChordNode:
                 logger.info(f'Joined a DHT ring containing {addr}.')
                 self._ring = addr
                 self.predecessor = None
-                self.successor = n.find_successor(self.id)
+                self._clear_successors()
+                self.immediate_successor = n.find_successor(self.id)
                 with Proxy(service_address(self._address)) as service:
                     service.refresh()
+                    service.refresh_replication()
         else:
             logger.error(f'Could not join the ring, node {addr}<id={id(addr):.2e}> unreachable.')
 
@@ -165,30 +191,36 @@ class ChordNode:
             self.predecessor = n
     
 
-    # Periodic methods:
+    # Periodic methods.
     def _stabilize(self):
-        ''' Verify it's own immediate succesor, checking for new nodes that may have
-        inserted themselves unannounced. This method is called periodically. '''
-        
-        if self.successor is None:
-            logger.info(f'Successor is None.')
-            raise NotImplementedError()
-        if self.successor == self.address:
-            if self.predecessor:
-                self.successor = self.predecessor
-            return
-        
-        try:
-            with Proxy(self.successor) as s:
-                x = s.predecessor
-                if (x is not None
-                and in_arc(id(x), l=self.id, r=id(self.successor))
-                and reachable(x)):
-                    self.successor = x
-                s.notify(self.address)
-        except Pyro4.errors.CommunicationError:
-            logger.error(f'Could not reach successor {self.successor}.')
-            self.successor = self.address
+        '''
+        Verify the successor list, shifting to the closest living successor in case
+        of failure.
+        '''
+        if self.immediate_successor is not None:
+            # Check for successor failure.
+            if not reachable(self.immediate_successor):
+                logger.info(f'Successor {self.immediate_successor.host!r} unreachable.')
+                self._shift_to_live_successor()
+
+            if self.immediate_successor is not None:
+                # Check for announced intermidiate successors.
+                with Proxy(self.immediate_successor) as s:
+                    sp = s.predecessor
+                    if (sp is not None and reachable(sp) and
+                        in_arc(id(sp), l=self.id, r=id(self.immediate_successor))):
+                        self.immediate_successor = sp
+
+                # Reconcile successor list.
+                with (Proxy(self.immediate_successor) as s,
+                      Proxy(service_address(self.address)) as service):
+                    self._successors = [self.immediate_successor] + s.successors[:-1]
+                    service.refresh_replication()
+                    s.notify(self.address)  # TODO: necessary?
+            else:
+                logger.error(f'Degenerated to trivial ring.')
+        elif self._predecessor is not None:
+            self.immediate_successor = self.predecessor
 
     def _fix_fingers(self):
         ''' Refresh finger table entries. This method is called periodically. '''
@@ -230,31 +262,55 @@ class ChordNode:
                 logger.error(f'{e.__class__.__name__}: {e}.')
 
 
-    # Helper / debugging methods:
+    # Helper methods.
+    def _shift_to_live_successor(self, k=1):
+        ''' Shifts the successor list left-wise to the closest living successor. '''
+        assert k > 0, 'Shift argument must be non-zero positive.'
+
+        # Find closest live successor.
+        for i,succ in enumerate(self._successors[k:], start=k):
+            if reachable(succ):
+                break
+        else:
+            i = len(self._successors)
+        
+        # Shift the successor list.
+        self._successors = self._successors[i:] + [None] * i
+        logger.info(f'Shifted {i} unreachable successors.')
+        
+        # Notify the service to claim the replicated data of all dead successors.
+        with Proxy(service_address(self._address)) as service:
+            service.claim_replicated_items(i)
+
+    def _clear_successors(self):
+        ''' Resets the successor list to its default state: `[None] * r`. '''
+        self._successors = [None] * DHT_REPLICATION_SIZE
+
+    # Debbuging methods.
     def debug_dump_successors(self) -> list:
         ''' Debugging method to dump the successors. '''
-        logger.debug(f'successors: {[self._successor]}')
+        logger.debug(f'successors: {self._successors}')
     
     def debug_get_ring_topology(self) -> tuple[list, bool]:
         ''' Debugging method to get all reachable nodes of the CHORD ring. Returns
         a tuple containing a list of the found succeding nodes of the ring and
         whether the ring was completely reachable. '''
         ring = [self.address]
-        curr = self.successor
+        curr = self.immediate_successor
         while curr is not None and curr != self.address:
             ring.append(curr)
             if not reachable(curr):
                 break
             with Proxy(curr) as n:
-                curr = n.successor
+                curr = n.immediate_successor
         return ring, (curr == self.address)
 
     def debug_to_list(self, partial: list = []) -> list:
         ''' Return a list of the DHT members. '''
-        if self.successor in partial:
-            if self.successor != partial[0]:
-                L = partial + [self._address, self.successor]
+        if self.immediate_successor in partial:
+            if self.immediate_successor != partial[0]:
+                L = partial + [self._address, self.immediate_successor]
                 logger.warning(f'Non-circular, but cyclical ring found: {L}')
             return partial
-        with Proxy(self.successor) as s:
+        with Proxy(self.immediate_successor) as s:
             return s.debug_to_list(partial + [self._address])

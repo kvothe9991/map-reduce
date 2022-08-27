@@ -58,6 +58,9 @@ def service_address(uri: URI) -> URI:
     name, host, port = unpack(uri)
     return URI(f'PYRO:{name}.service@{host}:{port}')
 
+def split(ls: list, at: int):
+    return ls[:at], ls[at:]
+
 def spawn_thread(target: Callable, args: tuple = (), kwargs: dict = {}) -> Thread:
     ''' Spawns a thread from a target function and arguments. '''
     thread = Thread(target=target, args=args, kwargs=kwargs)

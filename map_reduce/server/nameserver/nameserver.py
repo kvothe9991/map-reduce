@@ -8,9 +8,10 @@ import Pyro4.errors
 import Pyro4.naming
 from Pyro4 import URI, Proxy
 from Pyro4.naming import NameServerDaemon, BroadcastServer
-from map_reduce.server.configs import DAEMON_PORT, DHT_NAME, NS_BACKUP_INTERVAL, NS_BACKUP_KEY, NS_CONTEST_INTERVAL
-
-from map_reduce.server.utils import alive, daemon_address, reachable, id, kill_thread, service_address, spawn_thread
+from map_reduce.server.configs import ( DHT_SERVICE_NAME, NS_BACKUP_KEY,
+                                        NS_BACKUP_INTERVAL, NS_CONTEST_INTERVAL )
+from map_reduce.server.utils import ( reachable, id, kill_thread, spawn_thread,
+                                      daemon_address )
 from map_reduce.server.logger import get_logger
 
 
@@ -25,10 +26,7 @@ class NameServer:
     network are contested by hash/id precedence.
 
     TODO:
-    [ ] Nameserver persistance (perhaps on DHT?).
-    [ ] Online/offline API as an external delegation alternative.
-    [ ] After previous item:
-        [ ] Implement master nodes on top of nameserver.
+    [ ] Implement master nodes on top of nameserver.
     '''
     def __init__(self, ip, port=8008):
         ''' Instantiates a new nameserver with the given ip/port combination. '''
@@ -37,16 +35,15 @@ class NameServer:
         self._port = port
         self._alive = False
         self._uri: URI = None
-        self._dht_address: URI = service_address(daemon_address(DHT_NAME))
+        self._dht_address: URI = daemon_address(DHT_SERVICE_NAME)
 
         # Internal servers.
         self._ns_daemon: NameServerDaemon = None
         self._ns_broadcast: BroadcastServer = None
 
         # Callback delegation.
-        # TODO: Implement.
-        self._on_startup = {}
-        self._on_shutdown = {}
+        self._on_startup_events = {}
+        self._on_shutdown_events = {}
 
         # Threads.
         self._ns_thread: Thread = None
@@ -90,8 +87,6 @@ class NameServer:
     def _start_local_nameserver(self):
         '''
         Starts the local nameserver on a parallel thread.
-
-        TODO: Delegate callbacks.
         '''
         logger.info(f'Local nameserver started.')
         self._uri, self._ns_daemon, self._ns_broadcast = Pyro4.naming.startNS(self._ip,
@@ -117,7 +112,7 @@ class NameServer:
                         logger.error(f'Error extracting backup from DHT: backup={ns_data}.')
 
         # Callback delegation.
-        for name, callback in self._on_startup.items():
+        for name, callback in self._on_startup_events.items():
             logger.info(f'Calling startup on {name}')
             callback()
 
@@ -130,16 +125,21 @@ class NameServer:
         self._ns_backup_thread = spawn_thread(target=nameserver_backup_loop)
 
     def _backup_nameserver(self):
-        ''' Posts a backup of the nameserver data to the DHT if available. '''
+        '''
+        Posts a backup of the nameserver data to the DHT if available.
+        '''
         if reachable(self._dht_address):
-            if self._ns_daemon is not None and self._ns_daemon.nameserver is not None:
-                with Proxy(self._dht_address) as dht:
+            with Proxy(self._dht_address) as dht:
+                if self._ns_daemon is not None and self._ns_daemon.nameserver is not None:
                     dht.insert(NS_BACKUP_KEY, self._ns_daemon.nameserver.list())
                     logger.debug(f'Nameserver data backed up to DHT.')
+                # TODO: Maybe integrate delegate backups as well.
         
 
     def _stop_local_nameserver(self, forward_to: URI = None):
-        ''' Stops the local nameserver (killing its thread and daemons). '''
+        '''
+        Stops the local nameserver (killing its thread and daemons).
+        '''
         if forward_to is not None:
             # Forward registered objects to new nameserver.
             new_ns = forward_to
@@ -159,7 +159,7 @@ class NameServer:
             self._uri = new_ns
 
         # Callback delegation.
-        for name, callback in self._on_shutdown.items():
+        for name, callback in self._on_shutdown_events.items():
             logger.info(f'Calling shutdown on {name}')
             callback()
 
@@ -235,8 +235,8 @@ class NameServer:
 
     def delegate(self, name: str, on_startup: Callable, on_shutdown: Callable):
         ''' Subscribes delegate callbacks on local nameserver startup/shutdown. '''
-        self._on_startup[name] = on_startup
-        self._on_shutdown[name] = on_shutdown
+        self._on_startup_events[name] = on_startup
+        self._on_shutdown_events[name] = on_shutdown
 
     def bind(self) -> Pyro4.naming.NameServer:
         '''
