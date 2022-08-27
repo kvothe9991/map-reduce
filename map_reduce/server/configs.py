@@ -16,13 +16,13 @@ REQUESTS_WAIT_TIME = 1  # Seconds.
 DHT_NAME = 'chord.dht'
 DHT_SERVICE_NAME = 'chord.dht.service'
 DHT_FINGER_TABLE_SIZE = 160 // 2
-DHT_STABILIZATION_INTERVAL = 1
+DHT_STABILIZATION_INTERVAL = 0.1  # Important to stay as low as possible for quick replication.
 DHT_RECHECK_INTERVAL = 1
 DHT_REPLICATION_SIZE = 5
 
 # NS.
 NS_CONTEST_INTERVAL = 0.01
-NS_BACKUP_INTERVAL = 1
+NS_BACKUP_INTERVAL = 5
 NS_BACKUP_KEY = 'ns/backup'
 
 # Logging.
@@ -33,11 +33,11 @@ LOGGING = {
     },
     'dht': {
         'color': '\x1b[33;20m', # Yellow.
-        'level': logging.DEBUG,
+        'level': logging.INFO,
     },
     'dht:s': {
         'color': '\x1b[33;20m', # Yellow.
-        'level': logging.DEBUG,
+        'level': logging.INFO,
     },
     'ns': {
         'color': '\033[1;32m',  # Green.
