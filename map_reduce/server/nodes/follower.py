@@ -21,16 +21,13 @@ class Follower(ThreaderNode):
 
     # guarda un buff local. Ya no es local. (!)
     def save_buff(self, buff):
-        
         # ...
-
         # Guardar en el DHT.
         with Pyro4.locateNS() as nameserver:
             dht_uri = nameserver.lookup('chord.dht')
 
         with Proxy(dht_uri) as dht:
             dht.insert('<key>', buff)
-
         # ...
 
     # remueve un buff local
@@ -44,6 +41,8 @@ class Follower(ThreaderNode):
         inter_key, inter_values = mapper.result()
         buff = (inter_key, inter_values)
         self.save_buff(buff)
+    def map(self, split, map_function):
+        pass
 
     # agrupar por llaves y calcular
     def reduce(self, inter_key, inter_values,  reduce_function):
@@ -52,7 +51,8 @@ class Follower(ThreaderNode):
         out_values = reducer.result()
         buff = out_values
         self.save_buff(buff)
-
+    def reduce(self, split, reduce_function):
+        pass
 
 @Pyro4.expose
 class Mapper(ThreaderNode):
@@ -61,12 +61,14 @@ class Mapper(ThreaderNode):
         self._in_key = in_key
         self._in_value = in_value
         self._map_function = map_function
+        self._result = None
 
     def run(self):
-        pass
+        buff = self._map_function(self._in_key, self._in_value)
+        self._result = buff
 
     def result(self):
-        pass
+        return self._result
 
 
 @Pyro4.expose
@@ -76,9 +78,12 @@ class Reducer(ThreaderNode):
         self._inter_key = inter_key
         self._inter_values = inter_values
         self._reduce_function = reduce_function
+        self._result = None
 
     def run(self):
-        pass
+        buff = self._reduce_function(self._inter_key, self._inter_values)
+        self._result = buff
+
 
     def result(self):
-        pass
+        return self._result
