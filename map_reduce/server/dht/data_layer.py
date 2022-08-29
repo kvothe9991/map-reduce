@@ -4,9 +4,8 @@ import Pyro4
 import Pyro4.errors
 from Pyro4 import URI, Proxy
 
-from map_reduce.server.dht.locked_object import LockedObject
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import reachable, service_address, id, split
+from map_reduce.server.utils import reachable, service_address, id, split, LockedObject
 from map_reduce.server.configs import DHT_REPLICATION_SIZE
 
 
@@ -21,8 +20,6 @@ class ChordService:
         the provided Pyro4 URI belonging to the underlying node structure, meanwhile
         the `address` attribute contains the actual accessor to this class, with an
         appended 'service' on the name object.
-
-        TODO: Replication of objects.
         '''
         self._address = address
         self._node_address = node_address
@@ -113,8 +110,8 @@ class ChordService:
                     logger.error(f'Tried to lookup {key!r} from node {addr.host} but it was unreachable.')
             else:
                 logger.error(f'Successor not found, was None.')
-            
-            return value
+ 
+        return value
 
     @Pyro4.oneway
     def remove(self, key):
