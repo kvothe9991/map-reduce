@@ -6,13 +6,14 @@ help() {
     echo "Options:"
     echo "    -d, --destroy     destroy the containers after run."
     echo "    -n, --no-build    do not build from current state, use image from last build."
+    echo "        --no-remove   do not kill old running containers."
     echo "    -h, --help        display this help."
     echo "    -t, --tail        tail the logs of the containers."
     exit 2
 }
 
 SHRT=t,d,n,h
-LONG=tail,destroy,no-build,help
+LONG=tail,destroy,no-build,no-remove,help
 OPTS=$(getopt -a -n batch_run --options $SHRT --longoptions $LONG -- "$@")
 
 
@@ -40,6 +41,10 @@ do
             NO_BUILD=true
             shift
             ;;
+        --no-remove)
+            NO_REMOVE=true
+            shift
+            ;;
         -h | --help)
             help
             ;;
@@ -56,14 +61,19 @@ do
 done
 
 # Positional arguments.
-N=$1
-IMAGE_NAME=${2:-'map-reduce:server'}
+SERVER_TYPE=$1
+N=${2:-1}
+IMAGE_NAME=${3:-'map-reduce:server'}
 RAISE_CONTAINER='./scripts/run_container'
 
 
 # Main logic.
-echo 'Killing living containers...'
-'./scripts/batch_kill' $IMAGE_NAME
+## Kill previous?
+if [ -z "$NO_REMOVE" ]
+then
+    echo 'Killing living containers...'
+    './scripts/batch_kill' $IMAGE_NAME
+fi
 
 ## Build image?
 if [ -z "$NO_BUILD" ]
@@ -75,7 +85,7 @@ fi
 echo 'Starting containers...'
 for k in $(seq 1 $N); do
     echo "Raising container $k of $N..."
-    $RAISE_CONTAINER $(($k+1)) &> /dev/null &
+    $RAISE_CONTAINER $SERVER_TYPE $(($k+1)) &> /dev/null &
     if [ "$k" -eq "1" ]; then
         sleep 1
     fi
