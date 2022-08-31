@@ -1,7 +1,9 @@
 import logging
+import marshal
 from threading import Lock
 from hashlib import sha1
 from threading import Thread
+import types
 from typing import Callable, Generic, TypeVar
 
 import Pyro4
@@ -87,11 +89,22 @@ def spawn_thread(target: Callable, args: tuple = (), kwargs: dict = {}) -> Threa
     thread.start()
     return thread
 
-def kill_thread(thread: Thread, logger: logging.Logger = None, timeout=0.1):
+def kill_thread(thread: Thread, logger: logging.Logger = None, timeout=1, name=''):
     ''' Safely stops a thread from execution, and asserts its dead status. '''
     thread.join(timeout)
     if thread.is_alive() and logger is not None:
-        logger.error(f'Error killing thread.')
+        if name:
+            logger.error(f'Error killing {name} thread.')
+        else:
+            logger.error(f'Error killing thread.')
+
+
+# Function serialization.
+def serialize_function(func: Callable):
+    return marshal.dumps(func.__code__)
+
+def deserialize_function(bytes_: bytes, name: str = None) -> Callable:
+    return types.FunctionType(marshal.loads(bytes_), name=name)
 
 
 # Helper functions.

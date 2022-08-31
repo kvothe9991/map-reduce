@@ -1,3 +1,4 @@
+import argparse
 import logging
 from time import sleep
 
@@ -9,13 +10,18 @@ from Pyro4 import Daemon, URI
 Pyro4.config.SERVERTYPE = 'thread'
 # Pyro4.config.SERIALIZER = 'marshal'
 
+from map_reduce.client.client import run_client
 from map_reduce.server.configs import *
 from map_reduce.server.dht import ChordNode, ChordService, service_address
 from map_reduce.server.logger import get_logger
 from map_reduce.server.nameserver import NameServer
+from map_reduce.server.nodes import Master, Follower, RequestHandler
 
 DHT_ADDRESS = URI(f'PYRO:{DHT_NAME}@{IP}:{DAEMON_PORT}')
 DHT_SERVICE_ADDRESS = service_address(DHT_ADDRESS)
+MASTER_ADDRESS = URI(f'PYRO:{MASTER_NAME}@{IP}:{DAEMON_PORT}')
+FOLLOWER_ADDRESS = URI(f'PYRO:{FOLLOWER_NAME}@{IP}:{DAEMON_PORT}')
+RQH_ADDRESS = URI(f'PYRO:{RQ_HANDLER_NAME}@{IP}:{DAEMON_PORT}')
 
 
 logger = get_logger('main')
@@ -43,11 +49,21 @@ def run_servers():
     dht_service = ChordService(DHT_SERVICE_ADDRESS, DHT_ADDRESS)
     objs_for_daemon[DHT_SERVICE_ADDRESS.object] = dht_service
 
+    master = Master(MASTER_ADDRESS)
+    objs_for_daemon[MASTER_NAME] = master
+
+    follower = Follower(FOLLOWER_NAME)
+    objs_for_daemon[FOLLOWER_NAME] = follower
+
+    rq_handler = RequestHandler(RQH_ADDRESS)
+    objs_for_daemon[RQ_HANDLER_NAME] = rq_handler
+
     main_daemon = setup_daemon(IP, DAEMON_PORT, objs_for_daemon)
 
     # Nameserver.
     nameserver = setup_nameserver(IP, BROADCAST_PORT)
-    # nameserver.delegate('master', master.start, master.stop)
+    nameserver.delegate(RQH_ADDRESS, rq_handler.start, rq_handler.stop)
+    nameserver.delegate(MASTER_ADDRESS, master.start, master.stop)
     nameserver.start()
     
     # Hang until nameservers stop contesting.
