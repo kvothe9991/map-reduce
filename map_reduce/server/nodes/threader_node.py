@@ -1,9 +1,7 @@
 import Pyro4
 from Pyro4 import URI
-from map_reduce.server.nodes.follower import Follower
-from map_reduce.server.nodes.master import Master
 
-DAEMON_ADDRESS = URI("Pyro4://localhost:7777")
+DAEMON_ADDRESS = URI("PYRO:<name>@0.0.0.0:7777")
 
 
 @Pyro4.expose

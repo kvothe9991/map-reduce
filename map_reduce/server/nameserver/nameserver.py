@@ -1,7 +1,7 @@
 import time
 import logging
 from threading import Thread
-from typing import Callable, Union
+from typing import Any, Callable, Union
 
 import Pyro4
 import Pyro4.errors
@@ -28,7 +28,7 @@ class NameServer:
     TODO:
     [ ] Implement master nodes on top of nameserver.
     '''
-    def __init__(self, ip, port=8008):
+    def __init__(self, ip, port):
         ''' Instantiates a new nameserver with the given ip/port combination. '''
         # Self attributes.
         self._ip = ip
@@ -112,8 +112,9 @@ class NameServer:
                         logger.error(f'Error extracting backup from DHT: backup={ns_data}.')
 
         # Callback delegation.
-        for name, callback in self._on_startup_events.items():
-            logger.info(f'Calling startup on {name}')
+        for addr, callback in self._on_startup_events.items():
+            logger.info(f'Calling startup on {addr.object}')
+            self._ns_daemon.nameserver.register(addr.object, addr)
             callback()
 
         # Start backup thread.
@@ -159,8 +160,8 @@ class NameServer:
             self._uri = new_ns
 
         # Callback delegation.
-        for name, callback in self._on_shutdown_events.items():
-            logger.info(f'Calling shutdown on {name}')
+        for addr, callback in self._on_shutdown_events.items():
+            logger.info(f'Calling shutdown on {addr.object}')
             callback()
 
         # Shutdown the backup task.
@@ -233,10 +234,10 @@ class NameServer:
         if self.is_local:
             self._stop_local_nameserver()
 
-    def delegate(self, name: str, on_startup: Callable, on_shutdown: Callable):
+    def delegate(self, address: URI, on_startup: Callable, on_shutdown: Callable):
         ''' Subscribes delegate callbacks on local nameserver startup/shutdown. '''
-        self._on_startup_events[name] = on_startup
-        self._on_shutdown_events[name] = on_shutdown
+        self._on_startup_events[address] = on_startup
+        self._on_shutdown_events[address] = on_shutdown
 
     def bind(self) -> Pyro4.naming.NameServer:
         '''

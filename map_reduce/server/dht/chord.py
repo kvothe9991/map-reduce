@@ -258,8 +258,8 @@ class ChordNode:
                 time.sleep(DHT_STABILIZATION_INTERVAL)
             except CommunicationError as e:
                 logger.error(str(e))
-            except Exception as e:
-                logger.error(f'{e.__class__.__name__}: {e}.')
+            # except Exception as e:
+            #     logger.error(f'{e.__class__.__name__}: {e}.')
 
 
     # Helper methods.
