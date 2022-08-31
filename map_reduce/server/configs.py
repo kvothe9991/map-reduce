@@ -26,11 +26,20 @@ NS_BACKUP_INTERVAL = 5
 NS_BACKUP_KEY = 'ns/backup'
 
 # Master.
+MASTER_NAME = 'master'
 MASTER_DATA = 'master/staged/data'
 MASTER_MAP_CODE = 'master/staged/map-code'
 MASTER_REDUCE_CODE = 'master/staged/reduce-code'
 MASTER_BACKUP_KEY = 'master/backup'
+MASTER_BACKUP_INTERVAL = 2
 ITEMS_PER_CHUNK = 16
+
+# Follower.
+FOLLOWER_NAME = 'follower'
+
+# Request handler.
+RQ_HANDLER_NAME = 'rq.handler'
+
 
 # Logging.
 LOGGING = {

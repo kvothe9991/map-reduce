@@ -4,8 +4,8 @@ import Pyro4
 import Pyro4.errors
 from Pyro4 import Proxy, URI
 
-from map_reduce.server.utils import chunks_from
-from map_reduce.server.configs import ( DHT_NAME, MASTER_MAP_CODE, MASTER_REDUCE_CODE,
+from map_reduce.server.utils import chunks_from, service_address
+from map_reduce.server.configs import ( DHT_NAME, DHT_SERVICE_NAME, MASTER_MAP_CODE, MASTER_REDUCE_CODE,
                                         MASTER_DATA, REQUEST_RETRIES, REQUEST_TIMEOUT,
                                         IP )
 from map_reduce.server.logger import get_logger
@@ -13,9 +13,26 @@ logger = get_logger('rq', adapter={'IP': IP})
 
 
 @Pyro4.expose
+@Pyro4.behavior('single')
 class RequestHandler:
-    def __init__(self):
+    def __init__(self, address: URI):
+        self.address = address
         self.user_address = None
+    
+    def start(self):
+        '''
+        Start the request handler in the nameserver.
+        '''
+        with Pyro4.locateNS() as ns:
+            ns.register(self.address.object, self.address)
+    
+    def stop(self):
+        '''
+        Remove the request handler from the nameserver.
+        '''
+        with Pyro4.locateNS() as ns:
+            if ns.lookup(self.address.object) == self.address:
+                ns.remove(self.address.object)
 
     def startup(self, user_addr, input_data, map_function, reduce_function) -> bool:
         '''
@@ -24,18 +41,23 @@ class RequestHandler:
 
         Returns True if the process was started successfully, False otherwise.
         '''
+        logger.info(f'Received request from {user_addr!s}.')
         self.user_address = user_addr
-        input_data_chunks = { f'map/{i}': data for i,data in chunks_from(input_data) }
+        input_data_chunks = { f'map/{i}': data for i,data in chunks_from(input_data).items() }
+        logger.info(f'Chunks: {input_data_chunks}')
         for _ in range(REQUEST_RETRIES):
             try:
                 with Pyro4.locateNS() as ns:
                     dht_addr = ns.lookup(DHT_NAME)
-                with Proxy(dht_addr) as dht:
+                with Proxy(service_address(dht_addr)) as dht:
                     dht.insert(MASTER_MAP_CODE, map_function)
                     dht.insert(MASTER_REDUCE_CODE, reduce_function)
                     dht.insert(MASTER_DATA, input_data_chunks)
+                    k = len(input_data_chunks)
+                    logger.info(f'Pushed input data: {k} chunks: {input_data_chunks.keys()}.')
                 return True
-            except Pyro4.errors.CommunicationError:
+            except Pyro4.errors.CommunicationError as e:
+                logger.error(f'{e.__class__.__name__}: {e}')
                 time.sleep(REQUEST_TIMEOUT)
                 continue
         return False
