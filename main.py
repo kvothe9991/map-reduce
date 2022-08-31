@@ -33,8 +33,7 @@ def setup_nameserver(ip: str, port: int) -> NameServer:
     return NameServer(ip, port)
 
 
-if __name__ == "__main__":
-
+def run_servers():
     # Main daemon.
     objs_for_daemon = {}
 
@@ -73,3 +72,12 @@ if __name__ == "__main__":
 
         logger.info('Exiting.')
         exit(0)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser('Start a map-reduce module.')
+    parser.add_argument('module', action='store', choices=['server', 'client'])
+    args = parser.parse_args()
+    if args.module == 'server':
+        run_servers()
+    else:
+        run_client()

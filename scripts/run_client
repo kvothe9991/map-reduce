@@ -1,0 +1,51 @@
+#!/bin/bash
+
+help() {
+    echo "Usage:"
+    echo "    run_client [-h|--help]"
+    echo "Options:"
+    echo "    -h, --help        display this help."
+    exit 2
+}
+
+SHORT=h
+LONG=help
+OPTS=$(getopt -a -n run_client --options $SHORT --longoptions $LONG -- "$@")
+RAISE_CONTAINER='./scripts/run_container'
+
+# # Check for at least one argument.
+# if [ $# -eq 0 ]
+# then help
+# fi
+
+# Parse options.
+eval set -- "$OPTS"
+while :; do
+    case "$1" in
+        -h | --help) help;;
+        --) 
+            shift
+            break
+            ;;
+        *)
+            echo "Unexpected option: $1"
+            help
+            ;;
+    esac
+done
+
+
+echo "Raising client container"
+CONTAINER=$($RAISE_CONTAINER client 69 &)
+echo "Raised $CONTAINER."
+sleep 1
+
+
+kill_client() {
+    docker stop $CONTAINER -t 1 >& /dev/null
+    docker rm $CONTAINER        >& /dev/null
+    echo "Killed $CONTAINER."
+}
+trap kill_client EXIT
+
+docker logs -f --tail=15 "$CONTAINER"
