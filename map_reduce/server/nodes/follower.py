@@ -1,89 +1,67 @@
+from threading import Lock, Thread
 import Pyro4
 import logging
-from typing import List
+from typing import Any, Callable, List
 from Pyro4 import Proxy, URI
+from map_reduce.server.configs import MASTER_NAME
 
-from map_reduce.server.nodes.threader_node import ThreaderNode
 from map_reduce.server.logger import get_logger
+from map_reduce.server.utils import ( kill_thread, spawn_thread, deserialize_function )
 
 logger = get_logger('flwr')
 
-
 @Pyro4.expose
-class Follower(ThreaderNode):
-    """
-    Prime follower server.
-    """
+class Follower:
+    '''
+    Prime follower server for tasking.
+    '''
+    def __init__(self, address: URI):
+        self._address = address
+        self._task_id = None
+        self._task_data = None
+        self._task_result = None
+        self._task_function = None
+        
+        self._task_lock = Lock()
+        self._task_thread: Thread = None
+        
+        global logger
+        logger = logging.LoggerAdapter(logger, {'address': address})
 
-    def __init__(self, address: URI, master_address: URI) -> None:
-        super().__init__(address)
-        self._master_address = master_address
+    @Pyro4.oneway
+    def do(self, task_id: str, task_data: Any, func: bytes):
+        ''' Do the map or reduce task. '''
+        # Stop doing previous task.
+        self._task_lock.release()
+        if self._task_thread:
+            kill_thread(self._task_thread)
 
-    # guarda un buff local. Ya no es local. (!)
-    def save_buff(self, buff):
-        # ...
-        # Guardar en el DHT.
-        with Pyro4.locateNS() as nameserver:
-            dht_uri = nameserver.lookup('chord.dht')
+        # Restart task.
+        with self._task_lock:
+            self._task_id = task_id
+            self._task_data = task_data
+            self._task_function = func
+            self._task_result = None
+        
+        self._do_task_on_thread()
+    
 
-        with Proxy(dht_uri) as dht:
-            dht.insert('<key>', buff)
-        # ...
-
-    # remueve un buff local
-    def remove_buff(self, buff):
-        pass
-
-    # filtrar y mappear
-    def map(self, in_key, in_value, map_function):
-        mapper = Mapper(self._address, in_key, in_value, map_function)
-        mapper.run()
-        inter_key, inter_values = mapper.result()
-        buff = (inter_key, inter_values)
-        self.save_buff(buff)
-    def map(self, split, map_function):
-        pass
-
-    # agrupar por llaves y calcular
-    def reduce(self, inter_key, inter_values,  reduce_function):
-        reducer = Reducer(self._address, inter_key, inter_values, reduce_function)
-        reducer.run()
-        out_values = reducer.result()
-        buff = out_values
-        self.save_buff(buff)
-    def reduce(self, split, reduce_function):
-        pass
-
-@Pyro4.expose
-class Mapper(ThreaderNode):
-    def __init__(self, address: URI, in_key, in_value, map_function) -> None:
-        super().__init__(address)
-        self._in_key = in_key
-        self._in_value = in_value
-        self._map_function = map_function
-        self._result = None
-
-    def run(self):
-        buff = self._map_function(self._in_key, self._in_value)
-        self._result = buff
-
-    def result(self):
-        return self._result
+    # Helper methods.
+    def _do_task_on_thread(self):
+        ''' Do the task on a parallel thread. '''
+        self._task_thread = spawn_thread(self._do_task_and_report_results)
 
 
-@Pyro4.expose
-class Reducer(ThreaderNode):
-    def __init__(self, address: URI, inter_key, inter_values, reduce_function) -> None:
-        super().__init__(address)
-        self._inter_key = inter_key
-        self._inter_values = inter_values
-        self._reduce_function = reduce_function
-        self._result = None
-
-    def run(self):
-        buff = self._reduce_function(self._inter_key, self._inter_values)
-        self._result = buff
-
-
-    def result(self):
-        return self._result
+    def _do_task_and_report_results(self):
+        ''' Report the results to master. Not to be used directly on main thread. '''
+        with self._task_lock:
+            func = deserialize_function(self._task_function)
+            self._task_result = func(self._task_data)
+            if self._task_result is not None:
+                with Pyro4.locateNS() as ns, ns.lookup(MASTER_NAME) as master:
+                    master.report_task(self._address,
+                                       self._task_id,
+                                       self._task_function,
+                                       self._task_result)
+            else:
+                logger.error('Task errored, results were None.')
