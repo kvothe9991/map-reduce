@@ -7,7 +7,7 @@ import Pyro4.naming
 import Pyro4.socketutil
 from Pyro4 import Daemon, URI
 Pyro4.config.SERVERTYPE = 'thread'
-Pyro4.config.SERIALIZER = 'marshal'
+# Pyro4.config.SERIALIZER = 'marshal'
 
 from map_reduce.server.configs import *
 from map_reduce.server.dht import ChordNode, ChordService, service_address
