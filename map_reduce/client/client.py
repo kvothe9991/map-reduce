@@ -1,3 +1,4 @@
+from pprint import pp
 from map_reduce.client.server_interface import ServerInterface as server
 
 '''
@@ -28,4 +29,4 @@ def run_client():
     if daemon := server.startup(data, map, reduce):
         print( 'MapReduce tasks started, awaiting results...' )
         server.await_results()
-        print( server.results )
+        pp( server.results, indent=4 )

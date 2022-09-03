@@ -83,7 +83,7 @@ class Master:
         self._idle_followers = set()
         self._map_tasks = TaskGroup()
         self._reduce_tasks = TaskGroup()
-        self._results = []
+        self._results = {}
 
         # Thread safety locks.
         self._followers_lock = Lock()
@@ -168,8 +168,8 @@ class Master:
             # Get reduce results.
             with self._reduce_tasks_lock, self._results_lock:
                 self._reduce_tasks.set_as_complete(task_id)
-                out_val = result
-                self._results.append(out_val)
+                out_key, out_vals = task_id, result
+                self._results[out_key] = (out_vals)
         else:
             raise ValueError('Received a task function that is not map or reduce.')
 
