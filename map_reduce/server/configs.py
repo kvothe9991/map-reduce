@@ -57,11 +57,11 @@ LOGGING = {
     },
     'ns': {
         'color': '\033[1;32m',  # Green.
-        'level': logging.DEBUG,
+        'level': logging.INFO,
     },
     'flwr': {
         'color': '\x1b[1;31m',  # Red.
-        'level': logging.INFO,
+        'level': logging.DEBUG,
     },
     'mstr': {
         'color': '\x1b[1;31m',  # Red.

@@ -66,14 +66,12 @@ class TaskGroup:
 
 
 @Pyro4.expose
+@Pyro4.behavior('single')
 class Master:
     '''
     Prime master server, redirects tasks to subscribed followers over the network.
 
     TODO:
-        - Master backup in case of death.
-            - Backup lock for awaiting.
-        - Master recovery from backup.
         - Follower hang on master death.
     '''
     def __init__(self, address: URI):
@@ -143,7 +141,7 @@ class Master:
         Subscribes a follower to the master.
         '''
         self._idle_followers.add(follower_address)
-        logger.info(f'{follower_address} subscribed to master.')
+        logger.info(f'{follower_address!s} subscribed to master.')
     
     def report_task(self, follower: URI, task_id: int, task_func: bytes, result: Any):
         '''
@@ -191,10 +189,10 @@ class Master:
         such as the nameserver.
         '''
         self._alive = False
-        if self._master_thread:
-            kill_thread(self._master_thread, logger, name='master')
-        if self._backup_thread:
-            kill_thread(self._backup_thread, logger, name='backup')
+        if self._master_thread and self._master_thread.is_alive():
+            kill_thread(self._master_thread, logger, name='master', timeout=10)
+        if self._backup_thread and self._backup_thread.is_alive():
+            kill_thread(self._backup_thread, logger, name='backup', timeout=10)
         logger.info('Stopped master.')
 
 
@@ -216,38 +214,14 @@ class Master:
                             logger.info(f'Dispatched task {task_id} to worker {worker_addr.host}.')
                             return True
         return False
-    
-    # def _master_loop(self):
-    #     '''
-    #     Main loop of the master server.
-    #     '''
-    #     # Timeout until leader election.
-    #     time.sleep(5)
-
-    #     # Enter main loop.
-    #     while self._alive:
-    #         if self._map_function is None:
-    #             try:
-    #                 if sf := self._get_serialized_functions():
-    #                     logger.info('Found map-reduce request.')
-    #                     self._map_function, self._reduce_function = sf
-    #                     continue
-    #             except (Pyro4.errors.CommunicationError, Pyro4.errors.NamingError):
-    #                 pass
-    #         elif 
-    #         time.sleep(REQUEST_TIMEOUT)
-    #             # Get map and reduce functions.
-    #             functions = self._get_serialized_functions()
-    #             if functions is None:
-    #                 logger.error('Could not get map and reduce functions.')
-    #                 continue
-    #             else:
-    #                 self._map_function, self._reduce_function = functions
 
     def _master_loop(self):
         '''
         Main loop of the master server.
         '''
+        # Timeout 
+        time.sleep(1)
+
         # Await nameserver, DHT and a request.
         while self._alive:
             try:
@@ -257,9 +231,6 @@ class Master:
                     break
             except (Pyro4.errors.CommunicationError, Pyro4.errors.NamingError):
                 time.sleep(REQUEST_TIMEOUT)
-        
-        # Timeout 
-        time.sleep(5)
 
         # Startup begins.
         # self._start_time = time.time()
@@ -295,22 +266,25 @@ class Master:
             self._backup_thread = spawn_thread(self._backup_loop)
 
         # Await all map tasks.
-        logger.info('Started map tasks.')
-        while self._alive and self._map_tasks.any:
-            self._assign_task(self._map_tasks, self._map_function)
-            time.sleep(REQUEST_TIMEOUT)
+        if self._alive:
+            logger.info('Started map tasks.')
+            while self._alive and self._map_tasks.any:
+                self._assign_task(self._map_tasks, self._map_function)
+                time.sleep(REQUEST_TIMEOUT)
 
         # Await all reduce tasks.
-        logger.info('Started reduce tasks')
-        while self._alive and self._reduce_tasks.any:
-            self._assign_task(self._reduce_tasks, self._reduce_function)
-            time.sleep(REQUEST_TIMEOUT)
+        if self._alive:
+            logger.info('Started reduce tasks')
+            while self._alive and self._reduce_tasks.any:
+                self._assign_task(self._reduce_tasks, self._reduce_function)
+                time.sleep(REQUEST_TIMEOUT)
         
         # Post results to DHT and notify the request if finished.
-        logger.info('Committing final results to DHT.')
         if self._alive:
-            with self._dht_service as dht:
-                dht.insert('map-reduce/final-results', self._results)
+            logger.info('Committing final results to DHT.')
+            if self._alive:
+                with self._dht_service as dht:
+                    dht.insert('map-reduce/final-results', self._results)
     
     def _backup_loop(self):
         '''

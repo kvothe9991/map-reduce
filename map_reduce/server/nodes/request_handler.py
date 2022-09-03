@@ -1,3 +1,4 @@
+from logging import LoggerAdapter
 import time
 
 import Pyro4
@@ -9,7 +10,7 @@ from map_reduce.server.configs import ( DHT_NAME, DHT_SERVICE_NAME, MASTER_MAP_C
                                         MASTER_DATA, REQUEST_RETRIES, REQUEST_TIMEOUT,
                                         IP )
 from map_reduce.server.logger import get_logger
-logger = get_logger('rq', adapter={'IP': IP})
+logger = get_logger('rq')
 
 
 @Pyro4.expose
@@ -18,6 +19,8 @@ class RequestHandler:
     def __init__(self, address: URI):
         self.address = address
         self.user_address = None
+        global logger
+        logger = LoggerAdapter(logger, {'IP': IP})
     
     def start(self):
         '''
@@ -44,7 +47,7 @@ class RequestHandler:
         logger.info(f'Received request from {user_addr!s}.')
         self.user_address = user_addr
         input_data_chunks = { f'map/{i}': data for i,data in chunks_from(input_data).items() }
-        logger.info(f'Chunks: {input_data_chunks}')
+        logger.info(f'Chunks: {list(input_data_chunks.keys())}')
         for _ in range(REQUEST_RETRIES):
             try:
                 with Pyro4.locateNS() as ns:

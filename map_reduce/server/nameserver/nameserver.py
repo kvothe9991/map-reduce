@@ -151,7 +151,7 @@ class NameServer:
                         try:
                             receiver.register(name, addr, safe=True)
                         except Pyro4.errors.NamingError as e:
-                            logger.info(f'{e}')
+                            logger.debug(f'{e}')
                             continue
             except Exception as e:
                 logger.error(f"Error forwarding registry to nameserver {new_ns.host!r}: {e}")
@@ -179,6 +179,7 @@ class NameServer:
         
         logger.info(f'Local nameserver stopped.')
     
+    # Leader election.
     def _refresh_nameserver(self):
         '''
         Stabilizes the nameserver reference, either when a remote nameserver dies, or
@@ -208,7 +209,7 @@ class NameServer:
                     logger.info(f'I no longer am the nameserver, long live {new_ns.host}.')
                     self._stop_local_nameserver(forward_to=new_ns)
                 else:
-                    logger.info(f'I am still the nameserver.')
+                    logger.debug(f'I am still the nameserver.')
 
     # Main API.
     def start(self):

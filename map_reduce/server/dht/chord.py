@@ -204,19 +204,20 @@ class ChordNode:
                 self._shift_to_live_successor()
 
             if self.immediate_successor is not None:
-                # Check for announced intermidiate successors.
-                with Proxy(self.immediate_successor) as s:
-                    sp = s.predecessor
-                    if (sp is not None and reachable(sp) and
-                        in_arc(id(sp), l=self.id, r=id(self.immediate_successor))):
-                        self.immediate_successor = sp
+                if self.immediate_successor != self.address:
+                    # Check for announced intermidiate successors.
+                    with Proxy(self.immediate_successor) as s:
+                        sp = s.predecessor
+                        if (sp is not None and reachable(sp) and
+                            in_arc(id(sp), l=self.id, r=id(self.immediate_successor))):
+                            self.immediate_successor = sp
 
-                # Reconcile successor list.
-                with (Proxy(self.immediate_successor) as s,
-                      Proxy(service_address(self.address)) as service):
-                    self._successors = [self.immediate_successor] + s.successors[:-1]
-                    service.refresh_replication()
-                    s.notify(self.address)  # TODO: necessary?
+                    # Reconcile successor list.
+                    with (Proxy(self.immediate_successor) as s,
+                        Proxy(service_address(self.address)) as service):
+                        self._successors = [self.immediate_successor] + s.successors[:-1]
+                        service.refresh_replication()
+                        s.notify(self.address)  # TODO: necessary?
             else:
                 logger.error(f'Degenerated to trivial ring.')
         elif self._predecessor is not None:

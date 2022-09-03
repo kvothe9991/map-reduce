@@ -25,6 +25,7 @@ class Follower:
         
         self._task_lock = Lock()
         self._task_thread: Thread = None
+        self._announce_thread: Thread = spawn_thread(self._announce_to_master_loop)
         
         global logger
         logger = logging.LoggerAdapter(logger, {'address': address})
@@ -33,7 +34,8 @@ class Follower:
     def do(self, task_id: str, task_data: Any, func: bytes):
         ''' Do the map or reduce task. '''
         # Stop doing previous task.
-        self._task_lock.release()
+        if self._task_lock.locked():
+            self._task_lock.release()
         if self._task_thread:
             kill_thread(self._task_thread)
 
@@ -41,17 +43,27 @@ class Follower:
         with self._task_lock:
             self._task_id = task_id
             self._task_data = task_data
+            logger.debug(f'{type(func)=}')
             self._task_function = func
             self._task_result = None
         
-        self._do_task_on_thread()
-    
-
-    # Helper methods.
-    def _do_task_on_thread(self):
-        ''' Do the task on a parallel thread. '''
+        # Do task on thread.
         self._task_thread = spawn_thread(self._do_task_and_report_results)
 
+
+    # Helper methods.
+    def _announce_to_master_loop(self):
+        '''
+        Loop which awaits for a master to appear before announcing self as worker.
+        '''
+        while True:
+            try:
+                with Pyro4.locateNS() as ns:
+                    with Proxy(ns.lookup(MASTER_NAME)) as master:
+                        master.subscribe(self._address)
+                        break
+            except (Pyro4.errors.CommunicationError, Pyro4.errors.NamingError):
+                pass
 
     def _do_task_and_report_results(self):
         ''' Report the results to master. Not to be used directly on main thread. '''
