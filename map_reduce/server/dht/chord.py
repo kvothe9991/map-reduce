@@ -9,7 +9,7 @@ from Pyro4 import URI, Proxy
 Pyro4.config.COMMTIMEOUT = 3
 
 import Pyro4.errors
-from Pyro4.errors import CommunicationError
+from Pyro4.errors import CommunicationError, NamingError
 
 from map_reduce.server.configs import ( DHT_FINGER_TABLE_SIZE, DHT_STABILIZATION_INTERVAL,
                                         DHT_NAME, DHT_REPLICATION_SIZE )
@@ -257,7 +257,7 @@ class ChordNode:
                 self._fix_fingers()
                 self._check_ring_availability()
                 time.sleep(DHT_STABILIZATION_INTERVAL)
-            except CommunicationError as e:
+            except (CommunicationError, NamingError) as e:
                 logger.error(str(e))
             # except Exception as e:
             #     logger.error(f'{e.__class__.__name__}: {e}.')

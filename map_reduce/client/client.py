@@ -29,4 +29,4 @@ def run_client():
     if daemon := server.startup(data, map, reduce):
         print( 'MapReduce tasks started, awaiting results...' )
         server.await_results()
-        pp( server.results, indent=4 )
+        pp( server.results, indent=4, sort_dicts=True )

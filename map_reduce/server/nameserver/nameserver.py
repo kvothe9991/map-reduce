@@ -81,7 +81,7 @@ class NameServer:
         try:
             with Pyro4.locateNS() as ns:
                 return ns._pyroUri
-        except Pyro4.errors.NamingError:
+        except (Pyro4.errors.NamingError, PermissionError):
             return None
     
     def _start_local_nameserver(self):

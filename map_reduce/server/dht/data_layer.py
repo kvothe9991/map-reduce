@@ -165,12 +165,11 @@ class ChordService:
     @Pyro4.oneway
     def refresh_replication(self):
         ''' Refresh replication data from the successors' hash table. '''
-        # TODO: Safe iteration for when there's less successors than expected.
         with Proxy(self._node_address) as node:
             successors = node.successors
         with self._replicated_items as repl_successors:
             for i,repl in enumerate(repl_successors):
-                if successors[i] is not None:
+                if successors[i] is not None and reachable(successors[i]):
                     with Proxy(service_address(successors[i])) as succ:
                         repl.clear()
                         repl.update(succ.items)
