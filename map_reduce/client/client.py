@@ -10,7 +10,7 @@ def reduce(out_key: KEY, inter_value: VALUE) -> [VALUE]:
 '''
 data = []
 with open('map_reduce/client/data.txt') as file:
-    data = file.readlines()
+    data = [ line[:-1] for line in file.readlines() ]
 
 def map(doc_line: int, doc_line_text: str) -> list[tuple[str, int]]:
     res = []

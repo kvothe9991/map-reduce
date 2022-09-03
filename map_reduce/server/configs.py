@@ -11,6 +11,7 @@ DAEMON_PORT = 8008
 BROADCAST_PORT = 8009
 REQUEST_TIMEOUT = 0.02  # Seconds.
 REQUEST_RETRIES = 5
+RESULTS_KEY = 'map-reduce/final-results'
 
 # DHT.
 DHT_NAME = 'chord.dht'

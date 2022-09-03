@@ -94,7 +94,7 @@ def kill_thread(thread: Thread, logger: logging.Logger = None, timeout=1, name='
     thread.join(timeout)
     if thread.is_alive() and logger is not None:
         if name:
-            logger.error(f'Error killing {name} thread.')
+            logger.error(f'Error killing {name} thread: {thread.is_alive()=}.')
         else:
             logger.error(f'Error killing thread.')
 

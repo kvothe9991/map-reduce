@@ -8,7 +8,7 @@ from Pyro4 import Proxy, URI
 from map_reduce.server.utils import chunks_from, service_address
 from map_reduce.server.configs import ( DHT_NAME, DHT_SERVICE_NAME, MASTER_MAP_CODE, MASTER_REDUCE_CODE,
                                         MASTER_DATA, REQUEST_RETRIES, REQUEST_TIMEOUT,
-                                        IP )
+                                        IP, RESULTS_KEY )
 from map_reduce.server.logger import get_logger
 logger = get_logger('rq')
 
@@ -65,9 +65,12 @@ class RequestHandler:
                 continue
         return False
 
-    def notify_results(self, results):
+    def notify_results(self):
         '''
         Notify the user who requested the process with the results.
         '''
+        with Pyro4.locateNS() as ns:
+            with Proxy(service_address(ns.lookup(DHT_NAME))) as dht:
+                results = dht.lookup(RESULTS_KEY)
         with Proxy(self.user_address) as user:
             user.notify_results(results)

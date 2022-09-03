@@ -9,7 +9,7 @@ from Pyro4 import Proxy, URI
 
 from map_reduce.server.configs import ( DHT_NAME, MASTER_DATA, MASTER_BACKUP_KEY,
                                         MASTER_MAP_CODE, MASTER_REDUCE_CODE,
-                                        REQUEST_TIMEOUT, MASTER_BACKUP_INTERVAL )
+                                        REQUEST_TIMEOUT, MASTER_BACKUP_INTERVAL, RESULTS_KEY, RQ_HANDLER_NAME )
 from map_reduce.server.utils import ( reachable, service_address, spawn_thread,
                                       kill_thread )
 from map_reduce.server.logger import get_logger
@@ -162,8 +162,8 @@ class Master:
             with self._map_tasks_lock:
                 self._map_tasks.set_as_complete(task_id)
             with self._reduce_tasks_lock:
-                out_key, inter_val = result
-                self._reduce_tasks.pending.setdefault(out_key, []).append(inter_val)
+                for out_key, inter_val in result:
+                    self._reduce_tasks.pending.setdefault(out_key, []).append(inter_val)
         elif task_func == self._reduce_function:
             # Get reduce results.
             with self._reduce_tasks_lock, self._results_lock:
@@ -207,10 +207,13 @@ class Master:
                 if reachable(worker_addr):
                     with Proxy(worker_addr) as worker:
                         if tasks.pending:
-                            task_id, task = tasks.pending.popitem()
-                            tasks.assigned[task_id] = task
+                            task_id, data = tasks.pending.popitem()
+                            tasks.assigned[task_id] = data
                             self._followers.add(worker_addr)
-                            worker.do(task_id, task, func)
+                            if func == self._map_function:
+                                worker.map(task_id, data, func)
+                            else:
+                                worker.reduce(task_id, data, func)
                             logger.info(f'Dispatched task {task_id} to worker {worker_addr.host}.')
                             return True
         return False
@@ -282,9 +285,13 @@ class Master:
         # Post results to DHT and notify the request if finished.
         if self._alive:
             logger.info('Committing final results to DHT.')
-            if self._alive:
-                with self._dht_service as dht:
-                    dht.insert('map-reduce/final-results', self._results)
+            with self._dht_service as dht:
+                dht.insert(RESULTS_KEY, self._results)
+
+            # Notify results to request handler.
+            with Pyro4.locateNS() as ns:
+                with Proxy(ns.lookup(RQ_HANDLER_NAME)) as rqh:
+                    rqh.notify_results()
     
     def _backup_loop(self):
         '''
