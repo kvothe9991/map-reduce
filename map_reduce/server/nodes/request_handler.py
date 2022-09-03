@@ -33,9 +33,12 @@ class RequestHandler:
         '''
         Remove the request handler from the nameserver.
         '''
-        with Pyro4.locateNS() as ns:
-            if ns.lookup(self.address.object) == self.address:
-                ns.remove(self.address.object)
+        try:
+            with Pyro4.locateNS() as ns:
+                if ns.lookup(self.address.object) == self.address:
+                    ns.remove(self.address.object)
+        except Pyro4.errors.NamingError:
+            pass
 
     def startup(self, user_addr, input_data, map_function, reduce_function) -> bool:
         '''
