@@ -1,6 +1,6 @@
 FROM python:3.9.7-alpine
 
-RUN pip install Pyro4
+RUN pip install Pyro4 dill
 
 WORKDIR /
 

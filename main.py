@@ -3,12 +3,14 @@ import logging
 from time import sleep
 
 import Pyro4
+import Pyro4.util
 import Pyro4.errors
 import Pyro4.naming
 import Pyro4.socketutil
 from Pyro4 import Daemon, URI
 Pyro4.config.SERVERTYPE = 'thread'
-# Pyro4.config.SERIALIZER = 'marshal'
+Pyro4.config.SERIALIZER = 'dill'
+Pyro4.config.SERIALIZERS_ACCEPTED.add('dill')
 
 from map_reduce.client.client import run_client
 from map_reduce.server.configs import *
@@ -52,7 +54,7 @@ def run_servers():
     master = Master(MASTER_ADDRESS)
     objs_for_daemon[MASTER_NAME] = master
 
-    follower = Follower(FOLLOWER_NAME)
+    follower = Follower(FOLLOWER_ADDRESS)
     objs_for_daemon[FOLLOWER_NAME] = follower
 
     rq_handler = RequestHandler(RQH_ADDRESS)

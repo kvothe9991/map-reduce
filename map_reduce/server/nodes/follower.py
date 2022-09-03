@@ -1,12 +1,13 @@
 from threading import Lock, Thread
 import Pyro4
+import Pyro4.errors
 import logging
 from typing import Any, Callable, List
 from Pyro4 import Proxy, URI
 from map_reduce.server.configs import MASTER_NAME
 
 from map_reduce.server.logger import get_logger
-from map_reduce.server.utils import ( kill_thread, spawn_thread, deserialize_function )
+from map_reduce.server.utils import ( kill_thread, spawn_thread )
 
 logger = get_logger('flwr')
 
@@ -55,8 +56,7 @@ class Follower:
     def _do_task_and_report_results(self):
         ''' Report the results to master. Not to be used directly on main thread. '''
         with self._task_lock:
-            func = deserialize_function(self._task_function)
-            self._task_result = func(self._task_data)
+            self._task_result = self._task_function(self._task_id, self._task_data)
             if self._task_result is not None:
                 with Pyro4.locateNS() as ns, ns.lookup(MASTER_NAME) as master:
                     master.report_task(self._address,

@@ -1,11 +1,14 @@
-from time import sleep
 import Pyro4
+Pyro4.config.SERIALIZER = 'dill'
+Pyro4.config.SERIALIZERS_ACCEPTED.add('dill')
 import Pyro4.errors
 import Pyro4.socketutil
+
 import threading
+from time import sleep
 from typing import Any
 
-from map_reduce.server.utils import spawn_thread, serialize_function
+from map_reduce.server.utils import spawn_thread
 
 AWAIT_INTERVAL = 1
 IP = Pyro4.socketutil.getIpAddress(None, workaround127=None)
@@ -28,10 +31,6 @@ class ServerInterface:
         # Instance a daemon to expose class.
         daemon = Pyro4.Daemon(host=IP, port=8008)
         addr = daemon.register(cls, 'client')
-
-        # Serialize functions to bytecode.
-        map_f = serialize_function(map_f)
-        reduce_f = serialize_function(reduce_f)
 
         # Start the request for map-reduce server.
         with Pyro4.locateNS() as ns:
