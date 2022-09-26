@@ -1,9 +1,9 @@
-# `map-reduce`: A Python implementation of the MapReduce protocol.
+# A Python implementation of the map-reduce protocol.
 
-# Usage:
-## Requirements (once per system):
+## Usage:
+### Requirements (once per system):
 
-- ## Docker image: python:3.9.7-alpine
+- Docker image: python:3.9.7-alpine
 either (with internet connection) [~50mb]:
 ```
 docker pull python:3.9.7-alpine
@@ -13,19 +13,20 @@ or (from provided tar image):
 docker load -i <img_path>`
 ```
 
-- ## Docker network named "distributed"
+- Docker network named "distributed"
 ```bash
 docker network create --driver=bridge --subnet=172.18.0.0/16 --ip-range=172.18.1.0/25  \
                       --gateway=172.18.1.254 distributed
 ```
 
 ## Usage (every time):
-- ### Raise and tail `k` server containers (with cd on project root):
+
+- Raise and tail `k` server containers (with cd on project root):
 ```bash
 ./scripts/batch_run server k -dt
 ```
 
-- ### Startup client request.
+- Startup client request.
 ```bash
 ./scripts/run_client
 ```
