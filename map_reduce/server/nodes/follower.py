@@ -93,7 +93,7 @@ class Follower:
 
     def _announce_to_master_loop(self):
         '''
-        Loop which awaits for a master to appear before announcing self as worker.
+        Loop which awaits for a master to appear before announcing self as follower.
         '''
         while True:
             try:

@@ -78,7 +78,7 @@ class Master:
         # Basic attribs.
         self._address = address
         
-        # Tasking and workers.
+        # Tasking and followers.
         self._followers = set()
         self._idle_followers = set()
         self._map_tasks = TaskGroup()
@@ -199,22 +199,22 @@ class Master:
     # Helper methods.
     def _assign_task(self, tasks: TaskGroup, func: bytes) -> bool:
         '''
-        Assign any pending task from the provided group to any idle worker.
+        Assign any pending task from the provided group to any idle follower.
         '''
         with self._followers_lock, self._map_tasks_lock, self._reduce_tasks_lock:
             if self._idle_followers:
-                worker_addr = self._idle_followers.pop()
-                if reachable(worker_addr):
-                    with Proxy(worker_addr) as worker:
+                follower_addr = self._idle_followers.pop()
+                if reachable(follower_addr):
+                    with Proxy(follower_addr) as follower:
                         if tasks.pending:
                             task_id, data = tasks.pending.popitem()
                             tasks.assigned[task_id] = data
-                            self._followers.add(worker_addr)
+                            self._followers.add(follower_addr)
                             if func == self._map_function:
-                                worker.map(task_id, data, func)
+                                follower.map(task_id, data, func)
                             else:
-                                worker.reduce(task_id, data, func)
-                            logger.info(f'Dispatched task {task_id} to worker {worker_addr.host}.')
+                                follower.reduce(task_id, data, func)
+                            logger.info(f'Dispatched task {task_id} to follower {follower_addr.host}.')
                             return True
         return False
 
